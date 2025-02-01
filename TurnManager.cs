@@ -43,9 +43,6 @@ public partial class TurnManager : TileMapLayer
     private static readonly Vector2I TILE_ENEMY = new Vector2I(1, 2);
     private static readonly Vector2I TILE_WALL = new Vector2I(0, 1);
 
-    // Add constant for movement cost
-    private const int MOVE_ENDURANCE_COST = 2;
-
     // Valid moves set
     private Dictionary<Vector2I, int> validMoves = new();
 
