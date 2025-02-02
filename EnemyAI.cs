@@ -6,11 +6,29 @@ using System.Linq;
 public class EnemyAI
 {
     private static readonly Vector2I TILE_GROUND = new Vector2I(1, 0);
+    private const float CAUTIOUS_DISTANCE = 2f;
 
-    public enum PathfindingStrategy
+    public enum PathfindingStrategy { SmartPath, FlankPath, CirclePath, CautiousPath }
+
+    private static class MovementUtils
     {
-        DumbPath,
-        SmartPath
+        public static readonly Vector2I[] Cardinals = { Vector2I.Right, Vector2I.Up, Vector2I.Left, Vector2I.Down };
+
+        public static Vector2I[] GetDirections(Vector2I from, Vector2I to, bool includeCardinals = true)
+        {
+            var toTarget = (to - from).Sign();
+            var dirs = new List<Vector2I> { 
+                toTarget, 
+                new(-toTarget.Y, toTarget.X), // clockwise
+                new(toTarget.Y, -toTarget.X)  // counter-clockwise
+            };
+            if (includeCardinals) dirs.AddRange(Cardinals);
+            return dirs.Distinct().ToArray();
+        }
+
+        public static bool IsValidMove(Vector2I pos, TileMapLayer map, HashSet<Vector2I> occupied = null) =>
+            map.GetCellAtlasCoords(pos) == TILE_GROUND && 
+            (occupied?.Contains(pos) != true);
     }
 
     public struct EnemyAction
@@ -19,212 +37,204 @@ public class EnemyAI
         public bool useAbility;
         public Vector2I targetPosition;
 
-        public EnemyAction(Vector2I move, bool ability, Vector2I target)
-        {
-            moveDirection = move;
-            useAbility = ability;
-            targetPosition = target;
-        }
+        public EnemyAction(Vector2I move, bool ability = false, Vector2I target = default) =>
+            (moveDirection, useAbility, targetPosition) = (move, ability, target);
     }
 
     public static EnemyAction GetAction(Vector2I enemyPos, Character[] targets, int abilityRange, TileMapLayer map, Character enemy)
     {
-        // Filter out dead targets
         var livingTargets = targets.Where(t => !t.isDead).ToArray();
-        if (livingTargets.Length == 0) return new EnemyAction(Vector2I.Zero, false, Vector2I.Zero);
+        if (livingTargets.Length == 0) return new EnemyAction(Vector2I.Zero);
 
-        Vector2I targetPos = FindClosestTarget(enemyPos, livingTargets);
-        
-        // Check if any target is in ability range
-        foreach (Character target in livingTargets)
-        {
-            if (IsInAbilityRange(enemyPos, target.location, abilityRange))
-            {
-                return new EnemyAction(Vector2I.Zero, true, target.location);
-            }
-        }
-
-        // Get locations of all characters to consider for pathfinding
+        var targetPos = livingTargets.MinBy(t => enemyPos.DistanceTo(t.location)).location;
         var occupiedPositions = targets.Select(t => t.location).ToHashSet();
-        
-        // If no target in range, move towards closest target using enemy's pathfinding strategy
-        Vector2I moveDir = GetMoveDirection(enemyPos, targetPos, map, occupiedPositions, enemy.pathfinding);
-        return new EnemyAction(moveDir, false, Vector2I.Zero);
-    }
 
-    private static bool IsInAbilityRange(Vector2I source, Vector2I target, int range)
-    {
-        return source.DistanceTo(target) <= range;
-    }
+        // Check for ability use
+        var targetInRange = livingTargets.FirstOrDefault(t => enemyPos.DistanceTo(t.location) <= abilityRange);
+        if (targetInRange != null) return new EnemyAction(Vector2I.Zero, true, targetInRange.location);
 
-    public static Vector2I GetMoveDirection(Vector2I enemyPos, Vector2I targetPos, TileMapLayer map, HashSet<Vector2I> occupiedPositions, PathfindingStrategy strategy)
-    {
-        return FindPath(enemyPos, targetPos, map, strategy, occupiedPositions);
-    }
-
-    private static Vector2I FindPath(Vector2I start, Vector2I target, TileMapLayer map, PathfindingStrategy strategy, HashSet<Vector2I> occupiedPositions)
-    {
-        return strategy switch
+        // Get movement direction
+        Vector2I moveDir = enemy.pathfinding switch
         {
-            PathfindingStrategy.DumbPath => DumbPath(start, target, map),
-            _ => SmartPath(start, target, map, occupiedPositions) 
+            PathfindingStrategy.FlankPath => GetFlankMove(enemyPos, targetPos, map, occupiedPositions),
+            PathfindingStrategy.CirclePath => GetCircularMove(enemyPos, targetPos, map, occupiedPositions),
+            PathfindingStrategy.CautiousPath => GetCautiousMove(enemyPos, targetPos, map, occupiedPositions),
+            _ => GetSmartMove(enemyPos, targetPos, map, occupiedPositions)
         };
+
+        return new EnemyAction(moveDir);
     }
 
-    private static Vector2I DumbPath(Vector2I start, Vector2I target, TileMapLayer map)
+    private static Vector2I GetFlankMove(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupied)
     {
-        Vector2I direction = target - start;
+        // Try to get behind target
+        var behindTarget = target + (target - start);
         
-        // Normalize the direction to single step
-        Vector2I normalizedDir = new Vector2I(
-            Math.Sign(direction.X),
-            Math.Sign(direction.Y)
-        );
-
-        // If diagonal movement, try to move in either X or Y direction
-        if (normalizedDir.X != 0 && normalizedDir.Y != 0)
+        if (!MovementUtils.IsValidMove(behindTarget, map, occupied))
         {
-            Vector2I xMove = new Vector2I(normalizedDir.X, 0);
-            Vector2I yMove = new Vector2I(0, normalizedDir.Y);
+            // Try multiple side positions at different distances
+            var baseDirection = (target - start).Sign();
+            var sideDirections = new[] {
+                new Vector2I(-baseDirection.Y, baseDirection.X),  // right side
+                new Vector2I(baseDirection.Y, -baseDirection.X)   // left side
+            };
 
-            if (IsValidMove(start + xMove, map))
-                return xMove;
-            if (IsValidMove(start + yMove, map))
-                return yMove;
-        }
-
-        // Try the normalized direction if it's valid
-        if (IsValidMove(start + normalizedDir, map))
-            return normalizedDir;
-
-        return Vector2I.Zero;
-    }
-
-    private static Vector2I SmartPath(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupiedPositions)
-    {
-        var astarGrid = new AStarGrid2D();
-        var usedCells = map.GetUsedCells();
-        
-        if (usedCells.Count == 0)
-        {
-            GD.Print("No used cells found in map!");
-            return Vector2I.Zero;
-        }
-
-        // Calculate the actual region bounds based on used cells
-        int minX = int.MaxValue, minY = int.MaxValue;
-        int maxX = int.MinValue, maxY = int.MinValue;
-
-        foreach (var cell in usedCells)
-        {
-            minX = Math.Min(minX, cell.X);
-            minY = Math.Min(minY, cell.Y);
-            maxX = Math.Max(maxX, cell.X);
-            maxY = Math.Max(maxY, cell.Y);
-        }
-
-        // Add padding to ensure start and target are within bounds
-        minX = Math.Min(minX, Math.Min(start.X, target.X));
-        minY = Math.Min(minY, Math.Min(start.Y, target.Y));
-        maxX = Math.Max(maxX, Math.Max(start.X, target.X));
-        maxY = Math.Max(maxY, Math.Max(start.Y, target.Y));
-
-        // Create region with the calculated bounds
-        var region = new Rect2I(minX, minY, maxX - minX + 1, maxY - minY + 1);
-        astarGrid.Region = region;
-        astarGrid.CellSize = Vector2.One;
-        astarGrid.DiagonalMode = AStarGrid2D.DiagonalModeEnum.Never;
-        astarGrid.DefaultComputeHeuristic = AStarGrid2D.Heuristic.Manhattan;
-        astarGrid.Update();
-
-        // Initialize all cells as solid
-        for (int x = minX; x <= maxX; x++)
-        {
-            for (int y = minY; y <= maxY; y++)
+            foreach (var side in sideDirections)
             {
-                var pos = new Vector2I(x, y);
-                if (region.HasPoint(pos))
+                // Try positions at increasing distances from the target
+                for (int distance = 1; distance <= 3; distance++)
                 {
-                    astarGrid.SetPointSolid(pos, true);
+                    var sidePos = target + (side * distance);
+                    if (MovementUtils.IsValidMove(sidePos, map, occupied))
+                        return GetSmartMove(start, sidePos, map, occupied, true);
                 }
             }
         }
 
-        // Mark walkable paths
-        foreach (var cell in usedCells)
+        return GetSmartMove(start, target, map, occupied, true);
+    }
+
+    private static Vector2I GetCircularMove(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupied)
+    {
+        var distanceToTarget = start.DistanceTo(target);
+        
+        // Try to maintain a circular pattern around the target
+        var clockwiseDir = new Vector2I(-(target - start).Y, (target - start).X).Sign();
+        var counterClockwiseDir = new Vector2I((target - start).Y, -(target - start).X).Sign();
+        
+        // If too far, try to move closer while circling
+        if (distanceToTarget > 2)
         {
-            if (region.HasPoint(cell) && IsValidMove(cell, map))
+            var inwardDir = (target - start).Sign();
+            var possibleMoves = new[] 
             {
-                bool isOccupiedByLiving = occupiedPositions.Contains(cell) && cell != target && cell != start;
-                astarGrid.SetPointSolid(cell, isOccupiedByLiving);
+                start + clockwiseDir + inwardDir,
+                start + counterClockwiseDir + inwardDir,
+                start + inwardDir
+            };
+
+            foreach (var pos in possibleMoves)
+            {
+                if (MovementUtils.IsValidMove(pos, map, occupied))
+                {
+                    return (pos - start).Sign();
+                }
+            }
+        }
+        
+        // Try circular movement
+        if (MovementUtils.IsValidMove(start + clockwiseDir, map, occupied))
+        {
+            return clockwiseDir;
+        }
+        if (MovementUtils.IsValidMove(start + counterClockwiseDir, map, occupied))
+        {
+            return counterClockwiseDir;
+        }
+
+        // Fallback to smart path if circular movement is blocked
+        return GetSmartMove(start, target, map, occupied);
+    }
+
+    private static Vector2I GetCautiousMove(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupied)
+    {
+        var currentDistance = start.DistanceTo(target);
+        
+        // If we're at ideal distance, stay put
+        if (Mathf.Abs(currentDistance - CAUTIOUS_DISTANCE) < 0.1f)
+        {
+            return Vector2I.Zero;
+        }
+
+        // If we're too close, move away
+        if (currentDistance < CAUTIOUS_DISTANCE)
+        {
+            var awayDir = (start - target).Sign();
+            if (MovementUtils.IsValidMove(start + awayDir, map, occupied))
+            {
+                return awayDir;
+            }
+            
+            // Try moving sideways if we can't move directly away
+            var sideDirections = new[] {
+                new Vector2I(-awayDir.Y, awayDir.X),
+                new Vector2I(awayDir.Y, -awayDir.X)
+            };
+
+            foreach (var dir in sideDirections)
+            {
+                if (MovementUtils.IsValidMove(start + dir, map, occupied))
+                {
+                    return dir;
+                }
             }
         }
 
-        // Ensure start and target are walkable
-        if (!region.HasPoint(start) || !region.HasPoint(target))
+        // If we're too far, use smart pathing to get closer
+        if (currentDistance > CAUTIOUS_DISTANCE)
         {
-            return DumbPath(start, target, map);
+            return GetSmartMove(start, target, map, occupied);
         }
 
-        astarGrid.SetPointSolid(start, false);
-        astarGrid.SetPointSolid(target, false);
+        return Vector2I.Zero;
+    }
 
-        var path = astarGrid.GetPointPath(start, target);
+    private static Vector2I GetSmartMove(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupied, bool allowDirectFallback = true)
+    {
+        var astar = new AStarGrid2D();
+        astar.Region = map.GetUsedRect();
+        astar.CellSize = Vector2.One;
+        astar.DiagonalMode = AStarGrid2D.DiagonalModeEnum.Never;
+        astar.Update();
+
+        // First, mark all cells as passable
+        foreach (var cell in map.GetUsedCells())
+        {
+            astar.SetPointSolid(cell, false);
+        }
+
+        // Then mark walls and occupied spaces
+        foreach (var cell in map.GetUsedCells())
+        {
+            bool isWall = map.GetCellAtlasCoords(cell) != TILE_GROUND;
+            bool isBlocked = occupied.Contains(cell) && cell != target && cell != start;
+            
+            if (isWall || isBlocked)
+            {
+                astar.SetPointSolid(cell, true);
+            }
+        }
+
+        // Ensure start and target are not marked as solid
+        astar.SetPointSolid(start, false);
+        astar.SetPointSolid(target, false);
+
+        var path = astar.GetPointPath(start, target);
         
+        // Debug path finding
         if (path == null || path.Length < 2)
         {
-            return DumbPath(start, target, map);
+            GD.Print($"No path found from {start} to {target}");
+            return Vector2I.Zero;
         }
 
-        var nextStep = new Vector2I((int)path[1].X, (int)path[1].Y);
-        return (nextStep - start).Sign();
-    }
-
-    private static bool HasAdjacentWalkableCell(Vector2I pos, AStarGrid2D grid)
-    {
-        var adjacentOffsets = new Vector2I[]
+        var nextPos = new Vector2I((int)path[1].X, (int)path[1].Y);
+        if (MovementUtils.IsValidMove(nextPos, map, occupied))
         {
-            new Vector2I(-1, 0),
-            new Vector2I(1, 0),
-            new Vector2I(0, -1),
-            new Vector2I(0, 1)
-        };
-
-        foreach (var offset in adjacentOffsets)
-        {
-            var adjacent = pos + offset;
-            if (grid.IsInBoundsv(adjacent) && !grid.IsPointSolid(adjacent))
-            {
-                return true;
-            }
+            return (nextPos - start).Sign();
         }
-        return false;
-    }
 
-    private static bool IsValidMove(Vector2I pos, TileMapLayer map)
-    {
-        if (!map.GetUsedRect().HasPoint(pos)) return false;
-        var atlas = map.GetCellAtlasCoords(pos);
-        return atlas == TILE_GROUND;
-    }
-
-    public static Vector2I FindClosestTarget(Vector2I enemyPos, Character[] targets)
-    {
-        if (targets.Length == 0) return Vector2I.Zero;
-        
-        Vector2I closestDir = Vector2I.Zero;
-        float closestDistance = float.MaxValue;
-
-        foreach (Character target in targets)
+        // If direct path is blocked, try to move closer
+        foreach (var dir in MovementUtils.Cardinals
+            .OrderBy(d => (start + d).DistanceTo(target)))
         {
-            float distance = enemyPos.DistanceTo(target.location);
-            if (distance < closestDistance)
+            var altPos = start + dir;
+            if (MovementUtils.IsValidMove(altPos, map, occupied))
             {
-                closestDistance = distance;
-                closestDir = target.location;
+                return dir;
             }
         }
 
-        return closestDir;
+        return Vector2I.Zero;
     }
 }

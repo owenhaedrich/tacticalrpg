@@ -33,14 +33,8 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
     private Dictionary<Vector2I, int> validTargets = new();
 
     // Characters
-    private Character[] party = {
-        Character.Domli(new Vector2I(3, 3)),
-        Character.Zash(new Vector2I(5, 5))
-    };
-    private Character[] enemies = {
-        Character.Dog(new Vector2I(15, 11)),
-        Character.Dog(new Vector2I(17, 11))
-    };
+    private Character[] party;
+    private Character[] enemies;
 
     // Computed property for all characters
     private Character[] allCharacters => party.Concat(enemies).ToArray();
@@ -53,6 +47,10 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
     public override void _Ready()
     {
         LoadMap();
+    }
+
+    public void Initialize()
+    {
         UpdateMap();
         FindTargets(party[activePartyMember].location);
     }
@@ -335,4 +333,12 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
         FindTargets(party[activePartyMember].location);
     }
     #endregion
+
+    public void SetCharacters(Character[] partyMembers, Character[] enemyUnits)
+    {
+        party = partyMembers;
+        enemies = enemyUnits;
+        UpdateMap();
+        FindTargets(party[activePartyMember].location);
+    }
 }

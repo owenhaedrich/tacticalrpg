@@ -70,4 +70,30 @@ public class Character
         return new Character("Dog", location, 10f, 5, abilities, EnemyAI.PathfindingStrategy.SmartPath);
     }
 
+    public static Character EarthSpirit(Vector2I location)
+    {
+        List<Ability> abilities = new List<Ability>
+        {
+            new Ability("Sand Crush", 4f, 1, 2),
+        };
+        return new Character("Earth Spirit", location, 15f, 3, abilities, EnemyAI.PathfindingStrategy.FlankPath);
+    }
+
+    public static Character Goblin(Vector2I location)
+    {
+        List<Ability> abilities = new List<Ability>
+        {
+            new Ability("Rock Throw", 1f, 2, 1),
+        };
+        return new Character("Goblin", location, 8f, 6, abilities, EnemyAI.PathfindingStrategy.CautiousPath);
+    }
+
+    public static Character GiantBug(Vector2I location)
+    {
+        List<Ability> abilities = new List<Ability>
+        {
+            new Ability("Mandible Crush", 9f, 1, 1),
+        };
+        return new Character("Giant Bug", location, 20f, 3, abilities, EnemyAI.PathfindingStrategy.CirclePath);
+    }
 }

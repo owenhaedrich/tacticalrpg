@@ -20,7 +20,9 @@ public static class Levels
                 },
                 Enemies = new[] {
                     Character.Dog(new Vector2I(15, 11)),
-                    Character.Dog(new Vector2I(17, 11))
+                    Character.EarthSpirit(new Vector2I(17, 11)),
+                    Character.Goblin(new Vector2I(16, 9)),
+                    Character.GiantBug(new Vector2I(14, 10))
                 }
             }
         },
