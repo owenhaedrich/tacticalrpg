@@ -5,6 +5,43 @@ public class EnemyAI
 {
     private static readonly Vector2I TILE_GROUND = new Vector2I(1, 0);
 
+    public struct EnemyAction
+    {
+        public Vector2I moveDirection;
+        public bool useAbility;
+        public Vector2I targetPosition;
+
+        public EnemyAction(Vector2I move, bool ability, Vector2I target)
+        {
+            moveDirection = move;
+            useAbility = ability;
+            targetPosition = target;
+        }
+    }
+
+    public static EnemyAction GetAction(Vector2I enemyPos, Character[] targets, int abilityRange, TileMapLayer map)
+    {
+        Vector2I targetPos = FindClosestTarget(enemyPos, targets);
+        
+        // Check if any target is in ability range
+        foreach (Character target in targets)
+        {
+            if (IsInAbilityRange(enemyPos, target.location, abilityRange))
+            {
+                return new EnemyAction(Vector2I.Zero, true, target.location);
+            }
+        }
+
+        // If no target in range, move towards closest target
+        Vector2I moveDir = GetMoveDirection(enemyPos, targetPos, map);
+        return new EnemyAction(moveDir, false, Vector2I.Zero);
+    }
+
+    private static bool IsInAbilityRange(Vector2I source, Vector2I target, int range)
+    {
+        return source.DistanceTo(target) <= range;
+    }
+
     public static Vector2I GetMoveDirection(Vector2I enemyPos, Vector2I targetPos, TileMapLayer map)
     {
         Vector2I direction = targetPos - enemyPos;

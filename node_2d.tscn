@@ -1,10 +1,11 @@
-[gd_scene load_steps=8 format=4 uid="uid://bro4d0m1kqi6d"]
+[gd_scene load_steps=9 format=4 uid="uid://bro4d0m1kqi6d"]
 
 [ext_resource type="Texture2D" uid="uid://du6fu2mateegs" path="res://tileset.png" id="1_7nx6n"]
 [ext_resource type="Script" path="res://TurnManager.cs" id="2_4dhv8"]
 [ext_resource type="Script" path="res://Character.cs" id="3_aha73"]
 [ext_resource type="Script" path="res://EnemyAI.cs" id="4_8njl7"]
 [ext_resource type="Script" path="res://Ability.cs" id="5_k24om"]
+[ext_resource type="Script" path="res://Trait.cs" id="6_4hhe8"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_be51d"]
 texture = ExtResource("1_7nx6n")
@@ -42,3 +43,6 @@ script = ExtResource("4_8njl7")
 
 [node name="Abilities" type="Node2D" parent="Units"]
 script = ExtResource("5_k24om")
+
+[node name="Traits" type="Node2D" parent="Units/Abilities"]
+script = ExtResource("6_4hhe8")

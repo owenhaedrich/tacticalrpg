@@ -2,7 +2,7 @@ using Godot;
 using System.Linq;
 using System.Collections.Generic;
 
-public partial class TurnManager : TileMapLayer
+public partial class TurnManager : TileMapLayer // TileMapLayer is a custom class that extends TileMap
 {
 	enum TurnState
 	{
@@ -10,7 +10,7 @@ public partial class TurnManager : TileMapLayer
 		ENEMY
 	}
 
-    enum ActionMode
+    enum ActionState
     {
         MOVE,
         ABILITY
@@ -19,12 +19,12 @@ public partial class TurnManager : TileMapLayer
 	// Player, Enemies, Map Locations
 	List<Vector4I> map = new List<Vector4I>(); // Dynamic map
 	Character[] party = {
-		new Character(new Vector2I(1, 1), 100, 3),
-		new Character(new Vector2I(3, 3), 100, 3)
+		Character.Domli(new Vector2I(3, 3)),
+		Character.Zash(new Vector2I(5, 5))
 	};
 	Character[] enemies = {
-		new Character(new Vector2I(17, 10), 80, 3),
-		new Character(new Vector2I(13, 10), 80, 3)
+		Character.Dog(new Vector2I(15, 11)),
+		Character.Dog(new Vector2I(17, 11))
 	};
 	
 	// Turn Management
@@ -32,7 +32,7 @@ public partial class TurnManager : TileMapLayer
 	int activePartyMember = 0; 
 
     // Action Management
-    ActionMode currentAction = ActionMode.MOVE;
+    ActionState currentAction = ActionState.MOVE;
     private static readonly Vector2I TILE_ABILITY_TARGET = new Vector2I(0, 2);
     private Dictionary<Vector2I, int> validTargets = new();
 
@@ -71,13 +71,17 @@ public partial class TurnManager : TileMapLayer
             {
                 if (keyEvent.Keycode == Key.Key1)
                 {
-                    currentAction = ActionMode.MOVE;
+                    currentAction = ActionState.MOVE;
                     FindTargets(party[activePartyMember].location);
                 }
                 else if (keyEvent.Keycode == Key.Key2)
                 {
-                    currentAction = ActionMode.ABILITY;
+                    currentAction = ActionState.ABILITY;
                     FindTargets(party[activePartyMember].location);
+                }
+                else if (keyEvent.Keycode == Key.Enter)
+                {
+                    NextPlayerTurn();
                 }
             }
             else if (@event is InputEventMouseButton click && click.IsReleased())
@@ -85,11 +89,11 @@ public partial class TurnManager : TileMapLayer
                 Vector2I selectedCell = LocalToMap(click.Position);
                 bool actionTaken = false;
 
-                if (currentAction == ActionMode.MOVE)
+                if (currentAction == ActionState.MOVE)
                 {
                     actionTaken = MovePlayer(selectedCell);
                 }
-                else if (currentAction == ActionMode.ABILITY)
+                else if (currentAction == ActionState.ABILITY)
                 {
                     actionTaken = UseAbility(selectedCell);
                 }
@@ -110,14 +114,35 @@ public partial class TurnManager : TileMapLayer
         }
 		else if (turnState == TurnState.ENEMY)
 		{
-			turnState = TurnState.PLAYER;
-			
-			// Reset endurance for all party members when player turn starts
-			foreach (Character member in party)
+			bool allEnemiesExhausted = true;
+			foreach (Character enemy in enemies)
 			{
-				member.endurance = member.maxEndurance;
+				if (enemy.endurance > 0)
+				{
+					allEnemiesExhausted = false;
+					break;
+				}
 			}
-			 FindTargets(party[activePartyMember].location);
+
+			if (allEnemiesExhausted)
+			{
+				turnState = TurnState.PLAYER;
+				
+				// Reset endurance for all characters when player turn starts
+				foreach (Character member in party)
+				{
+					member.endurance = member.maxEndurance;
+				}
+				foreach (Character enemy in enemies)
+				{
+					enemy.endurance = enemy.maxEndurance;
+				}
+				FindTargets(party[activePartyMember].location);
+			}
+			else
+			{
+				UpdateEnemies();
+			}
 		}
 	}
 
@@ -156,7 +181,7 @@ public partial class TurnManager : TileMapLayer
 
 	    switch (currentAction)
 	    {
-	        case ActionMode.MOVE:
+	        case ActionState.MOVE:
 	            range = party[activePartyMember].endurance;
 	            while (queue.Count > 0)
 	            {
@@ -186,8 +211,9 @@ public partial class TurnManager : TileMapLayer
 	                SetCell(partyMember.location, 1, TILE_PLAYER);
 	            break;
 
-	        case ActionMode.ABILITY:
-	            range = 2; // Ability range
+	        case ActionState.ABILITY:
+	            Ability currentAbility = party[activePartyMember].currentAbility;
+	            range = currentAbility.range;
 	            while (queue.Count > 0)
 	            {
 	                Vector2I currentPos = queue.Dequeue();
@@ -216,9 +242,31 @@ public partial class TurnManager : TileMapLayer
     {
         if (validTargets.ContainsKey(selectedCell))
         {
-            // For now, just consume all remaining endurance
-            party[activePartyMember].endurance = 0;
-            // TODO: Implement actual ability effects
+            return UseAbility(party[activePartyMember], selectedCell);
+        }
+        return false;
+    }
+
+    private bool UseAbility(Character attacker, Vector2I targetPosition)
+    {
+        Ability currentAbility = attacker.currentAbility;
+        
+        if (attacker.endurance >= currentAbility.cost)
+        {
+            Character[] allCharacters = party.Concat(enemies).ToArray();
+            Character target = allCharacters.SingleOrDefault(c => c.location == targetPosition);
+
+            if (target != null)
+            {
+                attacker.endurance -= currentAbility.cost;
+                target.TakeHit(currentAbility.power);
+                
+                // Print status after ability use
+                GD.Print($"[{attacker.currentAbility.name}] {attacker.name} -> {target.name}");
+                GD.Print($"Attacker: {attacker.name} (HP: {attacker.health}, EP: {attacker.endurance})");
+                GD.Print($"Target: {target.name} (HP: {target.health}, EP: {target.endurance})");
+                GD.Print("------------------------");
+            }
             return true;
         }
         return false;
@@ -242,10 +290,21 @@ public partial class TurnManager : TileMapLayer
 	{
 	    foreach (Character enemy in enemies)
 	    {
-	        Vector2I targetPos = EnemyAI.FindClosestTarget(enemy.location, party);
-	        Vector2I moveDir = EnemyAI.GetMoveDirection(enemy.location, targetPos, this);
-	        enemy.location += moveDir;
-			UpdateMap();
+	        if (enemy.endurance > 0)
+	        {
+	            EnemyAI.EnemyAction action = EnemyAI.GetAction(enemy.location, party, enemy.currentAbility.range, this);
+	            
+	            if (action.useAbility)
+	            {
+	                UseAbility(enemy, action.targetPosition);
+	            }
+	            else
+	            {
+	                enemy.location += action.moveDirection;
+	                enemy.endurance--;
+	            }
+	            UpdateMap();
+	        }
 	    }
 	}
 
