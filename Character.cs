@@ -11,6 +11,7 @@ public class Character
     public string name;
     public Ability currentAbility { get; private set; }
     public List<Ability> abilities { get; private set; } = new List<Ability>();
+    public bool isDead { get; private set; } = false;
 
     public Character(string name, Vector2I location, float maxHealth, int maxEndurance, List<Ability> abilities)
     {
@@ -28,6 +29,9 @@ public class Character
     {
         // Negative amount = healing, Positive amount = damage
         health = Mathf.Clamp(health - amount, 0, maxHealth);
+        if (health <= 0)
+            isDead = true;
+            endurance = 0;
     }
 
     //Heroes

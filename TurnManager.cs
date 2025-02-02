@@ -4,239 +4,216 @@ using System.Collections.Generic;
 
 public partial class TurnManager : TileMapLayer // TileMapLayer is a custom class that extends TileMap
 {
-	enum TurnState
-	{
-		PLAYER,
-		ENEMY
-	}
-
-    enum ActionState
+    #region Constants and Types
+    // Atlas coordinates - grouped at top for easy reference
+    private static class Tiles
     {
-        MOVE,
-        ABILITY
+        public static readonly Vector2I Ground = new(1, 0);
+        public static readonly Vector2I Player = new(0, 0);
+        public static readonly Vector2I Movement = new(1, 1);
+        public static readonly Vector2I Enemy = new(1, 2);
+		public static readonly Vector2I Dead = new(2, 1);
+        public static readonly Vector2I Wall = new(0, 1);
+        public static readonly Vector2I AbilityTarget = new(0, 2);
     }
-	
-	// Player, Enemies, Map Locations
-	List<Vector4I> map = new List<Vector4I>(); // Dynamic map
-	Character[] party = {
-		Character.Domli(new Vector2I(3, 3)),
-		Character.Zash(new Vector2I(5, 5))
-	};
-	Character[] enemies = {
-		Character.Dog(new Vector2I(15, 11)),
-		Character.Dog(new Vector2I(17, 11))
-	};
-	
-	// Turn Management
-	TurnState turnState = TurnState.PLAYER;
-	int activePartyMember = 0; 
 
-    // Action Management
-    ActionState currentAction = ActionState.MOVE;
-    private static readonly Vector2I TILE_ABILITY_TARGET = new Vector2I(0, 2);
+    // Simplified enums
+    private enum TurnState { PLAYER, ENEMY }
+    private enum ActionState { MOVE, ABILITY }
+    #endregion
+
+    #region State Variables
+    // Core state
+    private List<Vector4I> map = new();
+    private TurnState turnState = TurnState.PLAYER;
+    private ActionState currentAction = ActionState.MOVE;
+    private int activePartyMember = 0;
+    private int activeEnemy = 0;
+    private Dictionary<Vector2I, int> validMoves = new();
     private Dictionary<Vector2I, int> validTargets = new();
 
-    // Atlas coordinate constants
-    private static readonly Vector2I TILE_GROUND = new Vector2I(1, 0);
-    private static readonly Vector2I TILE_PLAYER = new Vector2I(0, 0);
-    private static readonly Vector2I TILE_MOVEMENT = new Vector2I(1, 1);
-    private static readonly Vector2I TILE_ENEMY = new Vector2I(1, 2);
-    private static readonly Vector2I TILE_WALL = new Vector2I(0, 1);
+    // Characters
+    private Character[] party = {
+        Character.Domli(new Vector2I(3, 3)),
+        Character.Zash(new Vector2I(5, 5))
+    };
+    private Character[] enemies = {
+        Character.Dog(new Vector2I(15, 11)),
+        Character.Dog(new Vector2I(17, 11))
+    };
 
-    // Valid moves set
-    private Dictionary<Vector2I, int> validMoves = new();
+    // Computed property for all characters
+    private Character[] allCharacters => party.Concat(enemies).ToArray();
+    #endregion
 
-	// Called when the node enters the scene tree for the first time.
-	public override void _Ready()
-	{ 
-		Vector2I[] usedCells = GetUsedCells().ToArray();
-		foreach (Vector2I cell in usedCells)
-		{
-			Vector2I cellData = GetCellAtlasCoords(cell);
-			// Only add cells that have valid coordinates
-			if (cell.X >= 0 && cell.Y >= 0)
-			{
-				map.Add(new Vector4I(cell.X, cell.Y, cellData.X, cellData.Y));
-			}
-		}
-		UpdateMap();
-		FindTargets(party[activePartyMember].location);
-	}
+    #region Core Game Loop
+    public override void _Ready()
+    {
+        LoadMap();
+        UpdateMap();
+        FindTargets(party[activePartyMember].location);
+    }
 
-	public override void _Input(InputEvent @event)
-	{
-		if (turnState == TurnState.PLAYER)
+    public override void _Input(InputEvent @event)
+    {
+        if (turnState == TurnState.PLAYER)
+            HandlePlayerInput(@event);
+        else
+            UpdateEnemies();
+    }
+    #endregion
+
+    #region Input Handling
+    private void HandlePlayerInput(InputEvent @event)
+    {
+        if (@event is InputEventKey keyEvent && keyEvent.Pressed)
+            HandleKeyPress(keyEvent.Keycode);
+        else if (@event is InputEventMouseButton click && click.IsReleased())
+            HandleMouseClick(LocalToMap(click.Position));
+    }
+
+    private void HandleKeyPress(Key key)
+    {
+        switch (key)
         {
-            if (@event is InputEventKey keyEvent && keyEvent.Pressed)
+            case Key.Key1: SetAction(ActionState.MOVE); break;
+            case Key.Key2: SetAction(ActionState.ABILITY); break;
+            case Key.Enter: NextPlayerTurn(); break;
+        }
+    }
+
+    private void HandleMouseClick(Vector2I selectedCell)
+    {
+        bool actionTaken = currentAction == ActionState.MOVE
+            ? MovePlayer(selectedCell)
+            : UseAbility(selectedCell);
+
+        if (actionTaken)
+        {
+            UpdateMap();
+            if (party[activePartyMember].endurance <= 0)
+                NextPlayerTurn();
+            else
+                FindTargets(party[activePartyMember].location);
+        }
+    }
+    #endregion
+
+    #region Map Management
+    private void LoadMap()
+    {
+        foreach (Vector2I cell in GetUsedCells())
+        {
+            if (cell.X >= 0 && cell.Y >= 0)
             {
-                if (keyEvent.Keycode == Key.Key1)
-                {
-                    currentAction = ActionState.MOVE;
-                    FindTargets(party[activePartyMember].location);
-                }
-                else if (keyEvent.Keycode == Key.Key2)
-                {
-                    currentAction = ActionState.ABILITY;
-                    FindTargets(party[activePartyMember].location);
-                }
-                else if (keyEvent.Keycode == Key.Enter)
-                {
-                    NextPlayerTurn();
-                }
+                Vector2I atlas = GetCellAtlasCoords(cell);
+                map.Add(new Vector4I(cell.X, cell.Y, atlas.X, atlas.Y));
             }
-            else if (@event is InputEventMouseButton click && click.IsReleased())
+        }
+    }
+
+    public void UpdateMap()
+    {
+        //Draw map
+        foreach (Vector4I cell in map)
+        {
+            if (cell.X >= 0 && cell.Y >= 0)  // Validate cell position
             {
-                Vector2I selectedCell = LocalToMap(click.Position);
-                bool actionTaken = false;
+                Vector2I cellPosition = new Vector2I(cell.X, cell.Y);
+                Vector2I cellAtlasCoords = new Vector2I(cell.Z, cell.W);
+                SetCell(cellPosition, 1, cellAtlasCoords);
+            }
+            SetCell(new Vector2I(0,0), 1, Tiles.Wall);
+        }
 
-                if (currentAction == ActionState.MOVE)
-                {
-                    actionTaken = MovePlayer(selectedCell);
-                }
-                else if (currentAction == ActionState.ABILITY)
-                {
-                    actionTaken = UseAbility(selectedCell);
-                }
+        //Draw Party Members and Enemies
+        foreach (Character partyMember in party)
+            SetCell(partyMember.location, 1, partyMember.isDead ? Tiles.Dead : Tiles.Player);
+        foreach (Character enemy in enemies)
+            SetCell(enemy.location, 1, enemy.isDead ? Tiles.Dead : Tiles.Enemy);
+    }
 
-                if (actionTaken)
+    private void FindTargets(Vector2I position)
+    {
+        UpdateMap();
+        Dictionary<Vector2I, int> validCells = FloodFill(
+            position,
+            currentAction == ActionState.MOVE 
+                ? party[activePartyMember].endurance 
+                : party[activePartyMember].currentAbility.range,
+            currentAction == ActionState.MOVE
+        );
+
+        if (currentAction == ActionState.MOVE)
+        {
+            validMoves = validCells;
+            foreach (var pos in validCells.Keys)
+                SetCell(pos, 1, Tiles.Movement);
+            // Redraw party members with death state
+            foreach (Character member in party)
+                SetCell(member.location, 1, member.isDead ? Tiles.Dead : Tiles.Player);
+        }
+        else
+        {
+            validTargets = validCells;
+            foreach (var pos in validCells.Keys)
+                SetCell(pos, 1, Tiles.AbilityTarget);
+        }
+    }
+
+    private Dictionary<Vector2I, int> FloodFill(Vector2I start, int range, bool checkGround)
+    {
+        Queue<Vector2I> queue = new();
+        HashSet<Vector2I> visited = new();
+        Dictionary<Vector2I, int> cells = new() { [start] = 0 };
+        
+        queue.Enqueue(start);
+        visited.Add(start);
+
+        while (queue.Count > 0)
+        {
+            Vector2I current = queue.Dequeue();
+            int distance = cells[current];
+
+            if (distance < range)
+            {
+                foreach (Vector2I next in GetSurroundingCells(current))
                 {
-                    UpdateMap();
-                    if (party[activePartyMember].endurance <= 0)
+                    if (!visited.Contains(next) && 
+                        (!checkGround || GetCellAtlasCoords(next) == Tiles.Ground ||
+                         party.Any(p => p.location == next) ||
+                         allCharacters.Any(c => c.location == next && c.isDead)))
                     {
-                        NextPlayerTurn();
-                    }
-                    else
-                    {
-                        FindTargets(party[activePartyMember].location);
+                        visited.Add(next);
+                        queue.Enqueue(next);
+                        cells[next] = distance + 1;
                     }
                 }
             }
         }
-		else if (turnState == TurnState.ENEMY)
-		{
-			bool allEnemiesExhausted = true;
-			foreach (Character enemy in enemies)
-			{
-				if (enemy.endurance > 0)
-				{
-					allEnemiesExhausted = false;
-					break;
-				}
-			}
+        return cells;
+    }
+    #endregion
 
-			if (allEnemiesExhausted)
-			{
-				turnState = TurnState.PLAYER;
-				
-				// Reset endurance for all characters when player turn starts
-				foreach (Character member in party)
-				{
-					member.endurance = member.maxEndurance;
-				}
-				foreach (Character enemy in enemies)
-				{
-					enemy.endurance = enemy.maxEndurance;
-				}
-				FindTargets(party[activePartyMember].location);
-			}
-			else
-			{
-				UpdateEnemies();
-			}
-		}
-	}
+    #region Action Handling
+    private void SetAction(ActionState newAction)
+    {
+        currentAction = newAction;
+        FindTargets(party[activePartyMember].location);
+    }
 
-	public void UpdateMap()
-	{
-		//Draw map
-		foreach (Vector4I cell in map)
-		{
-			if (cell.X >= 0 && cell.Y >= 0)  // Validate cell position
-			{
-				Vector2I cellPosition = new Vector2I(cell.X, cell.Y);
-				Vector2I cellAtlasCoords = new Vector2I(cell.Z, cell.W);
-				SetCell(cellPosition, 1, cellAtlasCoords);
-			}
-			SetCell(new Vector2I(0,0), 1, TILE_WALL);
-		}
-
-		//Draw Party Members and Enemies
-		foreach (Character partyMember in party)
-			SetCell(partyMember.location, 1, TILE_PLAYER);
-		foreach (Character enemy in enemies)
-			SetCell(enemy.location, 1, TILE_ENEMY);
-	}
-
-	private void FindTargets(Vector2I position)
-	{
-	    UpdateMap();
-	    Queue<Vector2I> queue = new();
-	    HashSet<Vector2I> visited = new();
-	    Dictionary<Vector2I, int> validCells = new();
-	    int range;
-
-	    queue.Enqueue(position);
-	    visited.Add(position);
-	    validCells[position] = 0;
-
-	    switch (currentAction)
-	    {
-	        case ActionState.MOVE:
-	            range = party[activePartyMember].endurance;
-	            while (queue.Count > 0)
-	            {
-	                Vector2I currentPos = queue.Dequeue();
-	                int distance = validCells[currentPos];
-
-	                if (distance < range)
-	                {
-	                    foreach (Vector2I neighborPos in GetSurroundingCells(currentPos))
-	                    {
-	                        if (!visited.Contains(neighborPos) && 
-	                            (GetCellAtlasCoords(neighborPos) == TILE_GROUND || 
-	                             party.Any(p => p.location == neighborPos)))
-	                        {
-	                            visited.Add(neighborPos);
-	                            queue.Enqueue(neighborPos);
-	                            validCells[neighborPos] = distance + 1;
-	                            SetCell(neighborPos, 1, TILE_MOVEMENT);
-	                        }
-	                    }
-	                }
-	            }
-	            validMoves = validCells;
-	            
-	            // Redraw party members on top of movement tiles
-	            foreach (Character partyMember in party)
-	                SetCell(partyMember.location, 1, TILE_PLAYER);
-	            break;
-
-	        case ActionState.ABILITY:
-	            Ability currentAbility = party[activePartyMember].currentAbility;
-	            range = currentAbility.range;
-	            while (queue.Count > 0)
-	            {
-	                Vector2I currentPos = queue.Dequeue();
-	                int distance = validCells[currentPos];
-
-	                if (distance < range)
-	                {
-	                    foreach (Vector2I neighborPos in GetSurroundingCells(currentPos))
-	                    {
-	                        if (!visited.Contains(neighborPos))
-	                        {
-	                            visited.Add(neighborPos);
-	                            queue.Enqueue(neighborPos);
-	                            validCells[neighborPos] = distance + 1;
-	                            SetCell(neighborPos, 1, TILE_ABILITY_TARGET);
-	                        }
-	                    }
-	                }
-	            }
-	            validTargets = validCells;
-	            break;
-	    }
-	}
+    public bool MovePlayer(Vector2I selectedCell)
+    {
+        if (validMoves.ContainsKey(selectedCell) && 
+            !allCharacters.Any(c => c.location == selectedCell && !c.isDead))
+        {
+            int moveCost = validMoves[selectedCell];
+            party[activePartyMember].location = selectedCell;
+            party[activePartyMember].endurance -= moveCost;
+            return true;
+        }
+        return false;
+    }
 
     private bool UseAbility(Vector2I selectedCell)
     {
@@ -253,7 +230,6 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
         
         if (attacker.endurance >= currentAbility.cost)
         {
-            Character[] allCharacters = party.Concat(enemies).ToArray();
             Character target = allCharacters.SingleOrDefault(c => c.location == targetPosition);
 
             if (target != null)
@@ -271,55 +247,64 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
         }
         return false;
     }
+    #endregion
 
-	public bool MovePlayer(Vector2I selectedCell)
-	{
-	    if (validMoves.ContainsKey(selectedCell) && 
-	        !party.Any(p => p.location == selectedCell) && 
-	        !enemies.Any(e => e.location == selectedCell))
-	    {
-	        int moveCost = validMoves[selectedCell];
-	        party[activePartyMember].location = selectedCell;
-	        party[activePartyMember].endurance -= moveCost;
-	        return true;
-	    }
-	    return false;
-	}
-	
-	public void UpdateEnemies()
-	{
-	    foreach (Character enemy in enemies)
-	    {
-	        if (enemy.endurance > 0)
-	        {
-	            EnemyAI.EnemyAction action = EnemyAI.GetAction(enemy.location, party, enemy.currentAbility.range, this);
-	            
-	            if (action.useAbility)
-	            {
-	                UseAbility(enemy, action.targetPosition);
-	            }
-	            else
-	            {
-	                enemy.location += action.moveDirection;
-	                enemy.endurance--;
-	            }
-	            UpdateMap();
-	        }
-	    }
-	}
+    #region Turn Management
+    public void UpdateEnemies()
+    {
+        UpdateMap();
+        while (activeEnemy < enemies.Length)
+        {
+            Character enemy = enemies[activeEnemy];
+            if (!enemy.isDead && enemy.endurance > 0)
+            {
+                EnemyAI.EnemyAction action = EnemyAI.GetAction(enemy.location, party, enemy.currentAbility.range, this);
+                
+                if (action.useAbility)
+                {
+                    UseAbility(enemy, action.targetPosition);
+                }
+                else
+                {
+                    enemy.location += action.moveDirection;
+                    enemy.endurance--;
+                    UpdateMap();
+                }
+                activeEnemy++;
+                return;
+            }
+            activeEnemy++;
+        }
+
+        // All enemies have acted, reset for player turn
+        activeEnemy = 0;
+        turnState = TurnState.PLAYER;
+        
+        // Reset endurance for all living characters
+        foreach (Character member in party.Where(p => !p.isDead))
+            member.endurance = member.maxEndurance;
+        foreach (Character enemy in enemies.Where(e => !e.isDead))
+            enemy.endurance = enemy.maxEndurance;
+
+        // Skip dead player's turns
+        while (party[activePartyMember].isDead && activePartyMember < party.Length - 1)
+            activePartyMember++;
+            
+        FindTargets(party[activePartyMember].location);
+    }
 
     private void NextPlayerTurn()
     {
-        if (activePartyMember < (party.Length - 1))
-        {
-            activePartyMember++;
-            FindTargets(party[activePartyMember].location);
-        }
-        else
-        {
-            activePartyMember = 0;
-            turnState = TurnState.ENEMY;
-            UpdateEnemies();
-        }
+        do {
+            activePartyMember = (activePartyMember + 1) % party.Length;
+            if (activePartyMember == 0) {
+                turnState = TurnState.ENEMY;
+                UpdateEnemies();
+                return;
+            }
+        } while (party[activePartyMember].isDead);
+
+        FindTargets(party[activePartyMember].location);
     }
+    #endregion
 }

@@ -7,14 +7,14 @@ public class Ability
     public float power;
     public int range;
     public int cost;
-    public List<Trait> traits;
+    public List<Effect> effects;
 
-    public Ability(string name, float power, int range, int cost, List<Trait> traits = null)
+    public Ability(string name, float power, int range, int cost, List<Effect> effects = null)
     {
         this.name = name;
         this.power = power;
         this.range = range;
         this.cost = cost;
-        this.traits = traits ?? new List<Trait>(); // If traits is null, set it to an empty list
+        this.effects = effects ?? new List<Effect>();
     }
 }
