@@ -12,8 +12,10 @@ public class Character
     public Ability currentAbility { get; private set; }
     public List<Ability> abilities { get; private set; } = new List<Ability>();
     public bool isDead { get; private set; } = false;
+    public EnemyAI.PathfindingStrategy pathfinding { get; private set; }
 
-    public Character(string name, Vector2I location, float maxHealth, int maxEndurance, List<Ability> abilities)
+    public Character(string name, Vector2I location, float maxHealth, int maxEndurance, 
+                    List<Ability> abilities, EnemyAI.PathfindingStrategy pathfinding = EnemyAI.PathfindingStrategy.SmartPath)
     {
         this.name = name;
         this.location = location;
@@ -23,6 +25,7 @@ public class Character
         this.endurance = maxEndurance;
         this.abilities = abilities;
         this.currentAbility = abilities.Count > 0 ? abilities[0] : null;
+        this.pathfinding = pathfinding;
     }
 
     public void TakeHit(float amount)
@@ -30,8 +33,10 @@ public class Character
         // Negative amount = healing, Positive amount = damage
         health = Mathf.Clamp(health - amount, 0, maxHealth);
         if (health <= 0)
+        {
             isDead = true;
             endurance = 0;
+        }
     }
 
     //Heroes
@@ -62,7 +67,7 @@ public class Character
         {
             new Ability("Bite", 5f, 1, 1),
         };
-        return new Character("Dog", location, 10f, 1, abilities);
+        return new Character("Dog", location, 10f, 5, abilities, EnemyAI.PathfindingStrategy.SmartPath);
     }
 
 }

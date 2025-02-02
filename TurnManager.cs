@@ -5,7 +5,7 @@ using System.Collections.Generic;
 public partial class TurnManager : TileMapLayer // TileMapLayer is a custom class that extends TileMap
 {
     #region Constants and Types
-    // Atlas coordinates - grouped at top for easy reference
+    // Atlas coordinates
     private static class Tiles
     {
         public static readonly Vector2I Ground = new(1, 0);
@@ -17,7 +17,7 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
         public static readonly Vector2I AbilityTarget = new(0, 2);
     }
 
-    // Simplified enums
+    // State enums
     private enum TurnState { PLAYER, ENEMY }
     private enum ActionState { MOVE, ABILITY }
     #endregion
@@ -44,8 +44,11 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
 
     // Computed property for all characters
     private Character[] allCharacters => party.Concat(enemies).ToArray();
-    #endregion
 
+    private float enemyActionTimer = 0f;
+    private const float ENEMY_ACTION_DELAY = 0.1f; // Delay between enemy actions
+    #endregion
+ 
     #region Core Game Loop
     public override void _Ready()
     {
@@ -58,8 +61,19 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
     {
         if (turnState == TurnState.PLAYER)
             HandlePlayerInput(@event);
-        else
-            UpdateEnemies();
+    }
+
+    public override void _Process(double delta)
+    {
+        if (turnState == TurnState.ENEMY)
+        {
+            enemyActionTimer += (float)delta;
+            if (enemyActionTimer >= ENEMY_ACTION_DELAY)
+            {
+                enemyActionTimer = 0f;
+                UpdateEnemies();
+            }
+        }
     }
     #endregion
 
@@ -69,7 +83,7 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
         if (@event is InputEventKey keyEvent && keyEvent.Pressed)
             HandleKeyPress(keyEvent.Keycode);
         else if (@event is InputEventMouseButton click && click.IsReleased())
-            HandleMouseClick(LocalToMap(click.Position));
+            HandleMouseClick(LocalToMap(GetLocalMousePosition()));
     }
 
     private void HandleKeyPress(Key key)
@@ -91,10 +105,19 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
         if (actionTaken)
         {
             UpdateMap();
-            if (party[activePartyMember].endurance <= 0)
-                NextPlayerTurn();
-            else
-                FindTargets(party[activePartyMember].location);
+            CheckAndAdvanceTurn();
+        }
+    }
+
+    private void CheckAndAdvanceTurn()
+    {
+        if (party[activePartyMember].endurance <= 0)
+        {
+            NextPlayerTurn();
+        }
+        else
+        {
+            FindTargets(party[activePartyMember].location);
         }
     }
     #endregion
@@ -230,7 +253,7 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
         
         if (attacker.endurance >= currentAbility.cost)
         {
-            Character target = allCharacters.SingleOrDefault(c => c.location == targetPosition);
+            Character target = allCharacters.SingleOrDefault(c => c.location == targetPosition && !c.isDead);
 
             if (target != null)
             {
@@ -242,8 +265,8 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
                 GD.Print($"Attacker: {attacker.name} (HP: {attacker.health}, EP: {attacker.endurance})");
                 GD.Print($"Target: {target.name} (HP: {target.health}, EP: {target.endurance})");
                 GD.Print("------------------------");
+                return true;
             }
-            return true;
         }
         return false;
     }
@@ -258,7 +281,7 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
             Character enemy = enemies[activeEnemy];
             if (!enemy.isDead && enemy.endurance > 0)
             {
-                EnemyAI.EnemyAction action = EnemyAI.GetAction(enemy.location, party, enemy.currentAbility.range, this);
+                EnemyAI.EnemyAction action = EnemyAI.GetAction(enemy.location, party, enemy.currentAbility.range, this, enemy);
                 
                 if (action.useAbility)
                 {
@@ -270,7 +293,12 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
                     enemy.endurance--;
                     UpdateMap();
                 }
-                activeEnemy++;
+                
+                // Only increment activeEnemy if this enemy is out of endurance
+                if (enemy.endurance <= 0)
+                {
+                    activeEnemy++;
+                }
                 return;
             }
             activeEnemy++;

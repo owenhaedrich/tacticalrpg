@@ -27,7 +27,7 @@ public class EnemyAI
         }
     }
 
-    public static EnemyAction GetAction(Vector2I enemyPos, Character[] targets, int abilityRange, TileMapLayer map)
+    public static EnemyAction GetAction(Vector2I enemyPos, Character[] targets, int abilityRange, TileMapLayer map, Character enemy)
     {
         // Filter out dead targets
         var livingTargets = targets.Where(t => !t.isDead).ToArray();
@@ -47,8 +47,8 @@ public class EnemyAI
         // Get locations of all characters to consider for pathfinding
         var occupiedPositions = targets.Select(t => t.location).ToHashSet();
         
-        // If no target in range, move towards closest target
-        Vector2I moveDir = GetMoveDirection(enemyPos, targetPos, map, occupiedPositions);
+        // If no target in range, move towards closest target using enemy's pathfinding strategy
+        Vector2I moveDir = GetMoveDirection(enemyPos, targetPos, map, occupiedPositions, enemy.pathfinding);
         return new EnemyAction(moveDir, false, Vector2I.Zero);
     }
 
@@ -57,9 +57,9 @@ public class EnemyAI
         return source.DistanceTo(target) <= range;
     }
 
-    public static Vector2I GetMoveDirection(Vector2I enemyPos, Vector2I targetPos, TileMapLayer map, HashSet<Vector2I> occupiedPositions)
+    public static Vector2I GetMoveDirection(Vector2I enemyPos, Vector2I targetPos, TileMapLayer map, HashSet<Vector2I> occupiedPositions, PathfindingStrategy strategy)
     {
-        return FindPath(enemyPos, targetPos, map, PathfindingStrategy.SmartPath, occupiedPositions);
+        return FindPath(enemyPos, targetPos, map, strategy, occupiedPositions);
     }
 
     private static Vector2I FindPath(Vector2I start, Vector2I target, TileMapLayer map, PathfindingStrategy strategy, HashSet<Vector2I> occupiedPositions)
@@ -105,119 +105,79 @@ public class EnemyAI
         var astarGrid = new AStarGrid2D();
         var usedCells = map.GetUsedCells();
         
-        GD.Print($"=== Path Finding Start ===");
-        GD.Print($"From: {start} To: {target}");
-        
         if (usedCells.Count == 0)
         {
             GD.Print("No used cells found in map!");
             return Vector2I.Zero;
         }
 
-        var region = map.GetUsedRect();
+        // Calculate the actual region bounds based on used cells
+        int minX = int.MaxValue, minY = int.MaxValue;
+        int maxX = int.MinValue, maxY = int.MinValue;
+
+        foreach (var cell in usedCells)
+        {
+            minX = Math.Min(minX, cell.X);
+            minY = Math.Min(minY, cell.Y);
+            maxX = Math.Max(maxX, cell.X);
+            maxY = Math.Max(maxY, cell.Y);
+        }
+
+        // Add padding to ensure start and target are within bounds
+        minX = Math.Min(minX, Math.Min(start.X, target.X));
+        minY = Math.Min(minY, Math.Min(start.Y, target.Y));
+        maxX = Math.Max(maxX, Math.Max(start.X, target.X));
+        maxY = Math.Max(maxY, Math.Max(start.Y, target.Y));
+
+        // Create region with the calculated bounds
+        var region = new Rect2I(minX, minY, maxX - minX + 1, maxY - minY + 1);
         astarGrid.Region = region;
         astarGrid.CellSize = Vector2.One;
         astarGrid.DiagonalMode = AStarGrid2D.DiagonalModeEnum.Never;
         astarGrid.DefaultComputeHeuristic = AStarGrid2D.Heuristic.Manhattan;
         astarGrid.Update();
 
-        // Initialize all cells as solid first
-        for (int x = 0; x < region.Size.X; x++)
+        // Initialize all cells as solid
+        for (int x = minX; x <= maxX; x++)
         {
-            for (int y = 0; y < region.Size.Y; y++)
+            for (int y = minY; y <= maxY; y++)
             {
-                astarGrid.SetPointSolid(new Vector2I(x, y), true);
+                var pos = new Vector2I(x, y);
+                if (region.HasPoint(pos))
+                {
+                    astarGrid.SetPointSolid(pos, true);
+                }
             }
         }
 
-        // Mark walkable paths, considering occupied positions
-        int walkableCells = 0;
+        // Mark walkable paths
         foreach (var cell in usedCells)
         {
-            if (IsValidMove(cell, map))
+            if (region.HasPoint(cell) && IsValidMove(cell, map))
             {
-                // Allow pathfinding through occupied cells, but not stopping on them
-                bool isOccupied = occupiedPositions.Contains(cell) && cell != target;
-                astarGrid.SetPointSolid(cell, isOccupied);
-                if (!isOccupied) walkableCells++;
+                bool isOccupiedByLiving = occupiedPositions.Contains(cell) && cell != target && cell != start;
+                astarGrid.SetPointSolid(cell, isOccupiedByLiving);
             }
         }
 
-        GD.Print($"Grid size: {region.Size}");
-        GD.Print($"Used cells count: {usedCells.Count}");
-        GD.Print($"Walkable cells: {walkableCells}");
-
-        // Validate and ensure endpoints are walkable
+        // Ensure start and target are walkable
         if (!region.HasPoint(start) || !region.HasPoint(target))
         {
-            GD.Print($"Position out of region bounds! Region: {region}, Start: {start}, Target: {target}");
             return DumbPath(start, target, map);
         }
 
-        // Force endpoints to be walkable and check surrounding cells
         astarGrid.SetPointSolid(start, false);
         astarGrid.SetPointSolid(target, false);
 
-        // Debug path possibilities
-        var startConnected = HasAdjacentWalkableCell(start, astarGrid);
-        var targetConnected = HasAdjacentWalkableCell(target, astarGrid);
-        
-        GD.Print($"Start has adjacent walkable cells: {startConnected}");
-        GD.Print($"Target has adjacent walkable cells: {targetConnected}");
-
-        if (!startConnected || !targetConnected)
-        {
-            GD.Print("Start or target is isolated!");
-            return DumbPath(start, target, map);
-        }
-
-        // Try to find path
         var path = astarGrid.GetPointPath(start, target);
         
         if (path == null || path.Length < 2)
         {
-            GD.Print("No direct path found, trying alternatives...");
-            
-            // Try to find closest reachable point near target
-            Vector2I bestAlternative = Vector2I.Zero;
-            float bestDistance = float.MaxValue;
-            
-            for (int dx = -2; dx <= 2; dx++)
-            {
-                for (int dy = -2; dy <= 2; dy++)
-                {
-                    var altTarget = target + new Vector2I(dx, dy);
-                    if (region.HasPoint(altTarget) && !astarGrid.IsPointSolid(altTarget))
-                    {
-                        var altPath = astarGrid.GetPointPath(start, altTarget);
-                        if (altPath != null && altPath.Length >= 2)
-                        {
-                            float dist = target.DistanceTo(altTarget);
-                            if (dist < bestDistance)
-                            {
-                                bestDistance = dist;
-                                bestAlternative = altTarget;
-                                path = altPath;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            if (path == null || path.Length < 2)
-            {
-                GD.Print("No alternative paths found");
-                return DumbPath(start, target, map);
-            }
-            
-            GD.Print($"Found alternative path via {bestAlternative}");
+            return DumbPath(start, target, map);
         }
 
         var nextStep = new Vector2I((int)path[1].X, (int)path[1].Y);
-        var direction = (nextStep - start).Sign();
-        GD.Print($"Path found! Next step: {nextStep}, Direction: {direction}");
-        GD.Print($"=== Path Finding End ===");
-        return direction;
+        return (nextStep - start).Sign();
     }
 
     private static bool HasAdjacentWalkableCell(Vector2I pos, AStarGrid2D grid)
