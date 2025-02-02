@@ -20,12 +20,27 @@ public static class Levels
                 },
                 Enemies = new[] {
                     Character.Dog(new Vector2I(15, 11)),
-                    Character.EarthSpirit(new Vector2I(17, 11)),
+                    Character.Dog(new Vector2I(17, 11)),
                     Character.Goblin(new Vector2I(16, 9)),
-                    Character.GiantBug(new Vector2I(14, 10))
+                    Character.Goblin(new Vector2I(14, 10))
                 }
             }
         },
+        {
+            1, new LevelData
+            {
+                Party = new[] {
+                    Character.Zash(new Vector2I(4, 9)),
+                    Character.Domli(new Vector2I(3, 7))
+                },
+                Enemies = new[] {
+                    Character.EarthSpirit(new Vector2I(20, 5)),
+                    Character.EarthSpirit(new Vector2I(18, 9)),
+                    Character.GiantBug(new Vector2I(19, 13)),
+                    Character.GiantBug(new Vector2I(15, 7))
+                }
+            }
+        }
     };
 
     public static LevelData GetLevel(int level)
