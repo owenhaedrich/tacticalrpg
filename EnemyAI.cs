@@ -5,12 +5,13 @@ using System.Linq;
 
 public class EnemyAI
 {
-    private static readonly Vector2I TILE_GROUND = new Vector2I(1, 0);
-    private const float DISTANCE_CAUTIOUS = 2f;
-    private const float DISTANCE_FLANK = 2f;
-    private const float DISTANCE_TOLERANCE = 0.1f;
+    private const int DISTANCE_CAUTIOUS = 2;
+    private const int DISTANCE_FLANK = 3;
 
     private static readonly Dictionary<Character, bool> inDiveAttack = new Dictionary<Character, bool>();
+    private static readonly Dictionary<Character, Queue<Vector2I>> positionHistory = 
+        new Dictionary<Character, Queue<Vector2I>>();
+    private const int POSITION_HISTORY_LENGTH = 4;
 
     public enum PathfindingStrategy { SmartPath, FlankPath, CirclePath, CautiousPath }
 
@@ -23,11 +24,14 @@ public class EnemyAI
         };
 
         public static bool IsValidMove(Vector2I pos, TileMapLayer map, HashSet<Vector2I> occupied = null) =>
-            map.GetCellAtlasCoords(pos) == TILE_GROUND && 
+            map.GetCellAtlasCoords(pos) == Tiles.Ground && 
             (occupied?.Contains(pos) != true);
 
-        public static bool IsAtDistance(Vector2I pos, Vector2I target, float distance) =>
-            Mathf.Abs(pos.DistanceTo(target) - distance) < DISTANCE_TOLERANCE;
+        public static bool IsAtDistance(Vector2I pos, Vector2I target, int distance) =>
+            GetManhattanDistance(pos, target) == distance;
+
+        public static int GetManhattanDistance(Vector2I a, Vector2I b) =>
+            Mathf.Abs(a.X - b.X) + Mathf.Abs(a.Y - b.Y);
 
         public static Vector2I DirectionTo(Vector2I from, Vector2I to) =>
             (to - from).Sign();
@@ -47,8 +51,23 @@ public class EnemyAI
             (moveDirection, useAbility, targetPosition, endTurn) = (move, ability, target, end);
     }
 
-    public static EnemyAction GetAction(Vector2I enemyPos, Character[] targets, int abilityRange, TileMapLayer map, Character enemy)
+    public static EnemyAction GetAction(
+        Vector2I enemyPos, 
+        Character[] targets, 
+        Dictionary<Vector2I, int> validTargets,
+        TileMapLayer map, 
+        Character enemy)
     {
+        // Initialize position history for new enemies
+        if (!positionHistory.ContainsKey(enemy))
+            positionHistory[enemy] = new Queue<Vector2I>();
+
+        // Add current position to history
+        var history = positionHistory[enemy];
+        history.Enqueue(enemyPos);
+        while (history.Count > POSITION_HISTORY_LENGTH)
+            history.Dequeue();
+
         var livingTargets = targets.Where(t => !t.isDead).ToArray();
         if (!livingTargets.Any()) return EnemyAction.None;
 
@@ -58,47 +77,42 @@ public class EnemyAI
         if (enemy.endurance <= 0)
             return EnemyAction.EndTurn;
 
+        // Check for valid targets in range
+        var targetsInRange = livingTargets
+            .Where(t => validTargets.ContainsKey(t.location))
+            .ToArray();
+
+        // If we have enough endurance and there are targets in range, attack the closest one
+        if (targetsInRange.Any() && enemy.endurance >= enemy.currentAbility.cost)
+        {
+            var closestTarget = targetsInRange.MinBy(t => enemyPos.DistanceTo(t.location));
+            return new EnemyAction(Vector2I.Zero, true, closestTarget.location);
+        }
+
+        // Rest of movement logic remains the same
         var targetPos = livingTargets.MinBy(t => enemyPos.DistanceTo(t.location)).location;
         var occupiedPositions = livingTargets.Select(t => t.location).ToHashSet();
 
-        // Try to use ability if target in range and we have enough endurance
-        var targetInRange = livingTargets.FirstOrDefault(t => enemyPos.DistanceTo(t.location) <= abilityRange);
-        if (targetInRange != null)
-        {
-            if (enemy.endurance >= enemy.currentAbility.cost)
-                return new EnemyAction(Vector2I.Zero, true, targetInRange.location);
-
-            // Retreat if we can't use ability
-            var retreatDir = MovementUtils.DirectionTo(targetInRange.location, enemyPos);
-            if (MovementUtils.IsValidMove(enemyPos + retreatDir, map, occupiedPositions))
-                return new EnemyAction(retreatDir);
-        }
-
         // Get movement based on strategy
-        Vector2I moveDir = enemy.pathfinding switch
+        return enemy.pathfinding switch
         {
             PathfindingStrategy.FlankPath or PathfindingStrategy.CirclePath => 
-                GetFlankMove(enemyPos, targetPos, map, occupiedPositions, enemy),
+                new EnemyAction(GetFlankMove(enemyPos, targetPos, map, occupiedPositions, enemy)),
             PathfindingStrategy.CautiousPath => 
-                GetCautiousMove(enemyPos, targetPos, map, occupiedPositions),
+                new EnemyAction(GetCautiousMove(enemyPos, targetPos, map, occupiedPositions)),
             _ => GetSmartMove(enemyPos, targetPos, map, occupiedPositions)
         };
-
-        return moveDir == Vector2I.Zero && inDiveAttack[enemy] 
-            ? EnemyAction.EndTurn 
-            : new EnemyAction(moveDir);
     }
 
     private static bool IsGoodFlankPosition(Vector2I pos, Vector2I target)
     {
-        var distance = pos.DistanceTo(target);
-        // Consider any position at or beyond ideal distance as a good flank position
+        var distance = MovementUtils.GetManhattanDistance(pos, target);
         return distance >= DISTANCE_FLANK;
     }
 
     private static Vector2I GetFlankMove(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupied, Character enemy)
     {
-        var currentDistance = start.DistanceTo(target);
+        var currentDistance = MovementUtils.GetManhattanDistance(start, target);
 
         // If we're at a good flanking position, consider attacking
         if (IsGoodFlankPosition(start, target))
@@ -106,11 +120,11 @@ public class EnemyAI
             // Always try to move closer when beyond ideal distance
             if (currentDistance > DISTANCE_FLANK)
             {
-                var moveToTarget = GetSmartMove(start, target, map, occupied);
-                if (moveToTarget != Vector2I.Zero)
+                var moveAction = GetSmartMove(start, target, map, occupied);
+                if (!moveAction.endTurn)
                 {
                     inDiveAttack[enemy] = true;
-                    return moveToTarget;
+                    return moveAction.moveDirection;
                 }
             }
             // At ideal distance, start dive attack sequence
@@ -121,6 +135,7 @@ public class EnemyAI
             }
             else
             {
+                inDiveAttack[enemy] = false;  // Reset after dive
                 return Vector2I.Zero;  // Signal retreat
             }
         }
@@ -143,34 +158,30 @@ public class EnemyAI
                 if (MovementUtils.IsValidMove(flankPos, map, occupied))
                 {
                     var moveToFlank = GetSmartMove(start, flankPos, map, occupied);
-                    if (moveToFlank != Vector2I.Zero)
-                        return moveToFlank;
+                    if (!moveToFlank.endTurn)
+                        return moveToFlank.moveDirection;
                 }
             }
         }
 
         // If flanking fails, try direct approach
-        return GetSmartMove(start, target, map, occupied);
+        return GetSmartMove(start, target, map, occupied).moveDirection;
     }
 
     private static Vector2I GetCautiousMove(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupied)
     {
-        var currentDistance = start.DistanceTo(target);
+        var currentDistance = MovementUtils.GetManhattanDistance(start, target);
         
-        // If we're at ideal distance, stay put
-        if (MovementUtils.IsAtDistance(start, target, DISTANCE_CAUTIOUS))
-        {
+        // Exactly at ideal distance
+        if (currentDistance == DISTANCE_CAUTIOUS)
             return Vector2I.Zero;
-        }
 
-        // If we're too close, move away
+        // Too close, move away
         if (currentDistance < DISTANCE_CAUTIOUS)
         {
             var awayDir = MovementUtils.DirectionTo(target, start);
             if (MovementUtils.IsValidMove(start + awayDir, map, occupied))
-            {
                 return awayDir;
-            }
             
             // Try moving sideways if we can't move directly away
             var sideDirections = new[] {
@@ -181,22 +192,26 @@ public class EnemyAI
             foreach (var dir in sideDirections)
             {
                 if (MovementUtils.IsValidMove(start + dir, map, occupied))
-                {
                     return dir;
-                }
             }
         }
 
-        // If we're too far, use smart pathing to get closer
+        // Too far, move closer
         if (currentDistance > DISTANCE_CAUTIOUS)
-        {
-            return GetSmartMove(start, target, map, occupied);
-        }
+            return GetSmartMove(start, target, map, occupied).moveDirection;
 
         return Vector2I.Zero;
     }
 
-    private static Vector2I GetSmartMove(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupied, bool allowDirectFallback = true)
+    private static bool WouldCauseOscillation(Vector2I newPos, Queue<Vector2I> history)
+    {
+        if (history.Count < 2) return false;
+
+        // Check if we're moving to a position we were at recently
+        return history.Contains(newPos);
+    }
+
+    private static EnemyAction GetSmartMove(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupied)
     {
         var astar = new AStarGrid2D();
         astar.Region = map.GetUsedRect();
@@ -213,7 +228,7 @@ public class EnemyAI
         // Then mark walls and occupied spaces
         foreach (var cell in map.GetUsedCells())
         {
-            bool isWall = map.GetCellAtlasCoords(cell) != TILE_GROUND;
+            bool isWall = map.GetCellAtlasCoords(cell) == Tiles.Wall;
             bool isBlocked = occupied.Contains(cell) && cell != target && cell != start;
             
             if (isWall || isBlocked)
@@ -232,26 +247,31 @@ public class EnemyAI
         if (path == null || path.Length < 2)
         {
             GD.Print($"No path found from {start} to {target}");
-            return Vector2I.Zero;
+            return EnemyAction.EndTurn;
         }
 
         var nextPos = new Vector2I((int)path[1].X, (int)path[1].Y);
-        if (MovementUtils.IsValidMove(nextPos, map, occupied))
+        
+        // Get the history for the current enemy
+        var history = positionHistory.Values.LastOrDefault() ?? new Queue<Vector2I>();
+        
+        if (MovementUtils.IsValidMove(nextPos, map, occupied) && !WouldCauseOscillation(nextPos, history))
         {
-            return MovementUtils.DirectionTo(start, nextPos);
+            return new EnemyAction(MovementUtils.DirectionTo(start, nextPos));
         }
 
-        // If direct path is blocked, try to move closer
+        // If direct path would cause oscillation or is blocked, try alternative directions
         foreach (var dir in MovementUtils.Cardinals
             .OrderBy(d => (start + d).DistanceTo(target)))
         {
             var altPos = start + dir;
-            if (MovementUtils.IsValidMove(altPos, map, occupied))
+            if (MovementUtils.IsValidMove(altPos, map, occupied) && !WouldCauseOscillation(altPos, history))
             {
-                return dir;
+                return new EnemyAction(dir);
             }
         }
 
-        return Vector2I.Zero;
+        // If all moves would cause oscillation, end the turn
+        return EnemyAction.EndTurn;
     }
 }

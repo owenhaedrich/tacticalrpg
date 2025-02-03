@@ -83,7 +83,7 @@ public class Character
     {
         List<Ability> abilities = new List<Ability>
         {
-            new Ability("Rock Throw", 1f, 2, 1),
+            new Ability("Rock Throw", 1f, 3, 1),
         };
         return new Character("Goblin", location, 8f, 6, abilities, EnemyAI.PathfindingStrategy.CautiousPath);
     }
