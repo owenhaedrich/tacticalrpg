@@ -19,6 +19,8 @@ public static class Levels
                     Character.Zash(new Vector2I(5, 5))
                 },
                 Enemies = new[] {
+                    Character.Dog(new Vector2I(15, 9)),
+                    Character.Dog(new Vector2I(17, 9)),
                     Character.Dog(new Vector2I(15, 11)),
                     Character.Dog(new Vector2I(17, 11)),
                     Character.Goblin(new Vector2I(16, 9)),
@@ -34,6 +36,8 @@ public static class Levels
                     Character.Domli(new Vector2I(3, 7))
                 },
                 Enemies = new[] {
+                    Character.Goblin(new Vector2I(15, 11)),
+                    Character.Goblin(new Vector2I(17, 11)),
                     Character.EarthSpirit(new Vector2I(20, 5)),
                     Character.EarthSpirit(new Vector2I(18, 9)),
                     Character.GiantBug(new Vector2I(19, 13)),

@@ -3,7 +3,7 @@ using Godot;
 public partial class GameManager : Node
 {
     private int currentLevel = 0;
-    private TurnManager activeTurnManager;
+    private TurnManager activeLevel;
     private Node levelContainer;
     private const int MAX_LEVELS = 2; // Update this based on number of level scenes
 
@@ -31,9 +31,9 @@ public partial class GameManager : Node
         else if (newLevel >= MAX_LEVELS)
             newLevel = 0;
 
-        if (activeTurnManager != null)
+        if (activeLevel != null)
         {
-            activeTurnManager.QueueFree();
+            activeLevel.QueueFree();
         }
 
         currentLevel = newLevel;
@@ -48,11 +48,11 @@ public partial class GameManager : Node
     private void LoadCurrentLevel()
     {
         var levelScene = GD.Load<PackedScene>($"res://Levels/level_{currentLevel}.tscn");
-        activeTurnManager = levelScene.Instantiate<TurnManager>();
-        levelContainer.AddChild(activeTurnManager);
+        activeLevel = levelScene.Instantiate<TurnManager>();
+        levelContainer.AddChild(activeLevel);
         
         var levelData = Levels.GetLevel(currentLevel);
-        activeTurnManager.SetCharacters(levelData.Party, levelData.Enemies);
-        activeTurnManager.Initialize();
+        activeLevel.SetCharacters(levelData.Party, levelData.Enemies);
+        activeLevel.Initialize();
     }
 }

@@ -5,17 +5,6 @@ using System.Collections.Generic;
 public partial class TurnManager : TileMapLayer // TileMapLayer is a custom class that extends TileMap
 {
     #region Constants and Types
-    // Atlas coordinates
-    private static class Tiles
-    {
-        public static readonly Vector2I Ground = new(1, 0);
-        public static readonly Vector2I Player = new(0, 0);
-        public static readonly Vector2I Movement = new(1, 1);
-        public static readonly Vector2I Enemy = new(1, 2);
-		public static readonly Vector2I Dead = new(2, 1);
-        public static readonly Vector2I Wall = new(0, 1);
-        public static readonly Vector2I AbilityTarget = new(0, 2);
-    }
 
     // State enums
     private enum TurnState { PLAYER, ENEMY }
@@ -179,6 +168,9 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
             validTargets = validCells;
             foreach (var pos in validCells.Keys)
                 SetCell(pos, 1, Tiles.AbilityTarget);
+			// Redraw user
+			foreach (Character member in party)
+				SetCell(member.location, 1, Tiles.Player);
         }
     }
 
@@ -271,6 +263,28 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
     #endregion
 
     #region Turn Management
+    private Vector2I ResolveDiagonalMove(Vector2I moveDirection)
+    {
+        // If the move is diagonal (both x and y are non-zero)
+        if (moveDirection.X != 0 && moveDirection.Y != 0)
+        {
+            // Randomly choose to move either horizontally or vertically
+            return GD.RandRange(0, 1) == 0
+                ? new Vector2I(moveDirection.X, 0)
+                : new Vector2I(0, moveDirection.Y);
+        }
+        return moveDirection;
+    }
+
+    private Dictionary<Vector2I, int> GetValidTargetsForCharacter(Character character)
+    {
+        return FloodFill(
+            character.location,
+            character.currentAbility.range,
+            false  // Don't check ground for targets
+        );
+    }
+
     public void UpdateEnemies()
     {
         UpdateMap();
@@ -279,7 +293,14 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
             Character enemy = enemies[activeEnemy];
             if (!enemy.isDead && enemy.endurance > 0)
             {
-                EnemyAI.EnemyAction action = EnemyAI.GetAction(enemy.location, party, enemy.currentAbility.range, this, enemy);
+                Dictionary<Vector2I, int> validTargets = GetValidTargetsForCharacter(enemy);
+                EnemyAI.EnemyAction action = EnemyAI.GetAction(
+                    enemy.location, 
+                    party, 
+                    validTargets,
+                    this, 
+                    enemy
+                );
                 
                 if (action.useAbility)
                 {
@@ -287,7 +308,8 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
                 }
                 else
                 {
-                    enemy.location += action.moveDirection;
+                    Vector2I resolvedMove = ResolveDiagonalMove(action.moveDirection);
+                    enemy.location += resolvedMove;
                     enemy.endurance--;
                     UpdateMap();
                 }

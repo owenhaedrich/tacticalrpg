@@ -1,33 +1,19 @@
-[gd_scene load_steps=7 format=3 uid="uid://chhxptcxkfnyv"]
+[gd_scene load_steps=2 format=3 uid="uid://chhxptcxkfnyv"]
 
 [ext_resource type="Script" path="res://GameManager.cs" id="1_dd75i"]
-[ext_resource type="Script" path="res://Levels.cs" id="2_osko0"]
-[ext_resource type="Script" path="res://Character.cs" id="5_pfune"]
-[ext_resource type="Script" path="res://EnemyAI.cs" id="6_cn1hg"]
-[ext_resource type="Script" path="res://Ability.cs" id="7_gpnda"]
-[ext_resource type="Script" path="res://Effect.cs" id="8_cxjqo"]
 
 [node name="World" type="Node2D"]
 script = ExtResource("1_dd75i")
 
 [node name="Levels" type="Node2D" parent="."]
-script = ExtResource("2_osko0")
 
 [node name="Characters" type="Node2D" parent="Levels"]
-script = ExtResource("5_pfune")
 
 [node name="Heroes" type="Node2D" parent="Levels/Characters"]
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="Levels/Characters/Heroes"]
 
 [node name="Enemies" type="Node2D" parent="Levels/Characters"]
-script = ExtResource("6_cn1hg")
-
-[node name="Abilities" type="Node2D" parent="Levels"]
-script = ExtResource("7_gpnda")
-
-[node name="Effects" type="Node2D" parent="Levels/Abilities"]
-script = ExtResource("8_cxjqo")
 
 [node name="Camera2D" type="Camera2D" parent="."]
 position = Vector2(569, 329)
