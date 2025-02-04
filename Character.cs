@@ -65,7 +65,7 @@ public class Character
     {
         List<Ability> abilities = new List<Ability>
         {
-            new Ability("Bite", 5f, 1, 1),
+            new Ability("Bite", 3f, 1, 1),
         };
         return new Character("Dog", location, 10f, 5, abilities);
     }

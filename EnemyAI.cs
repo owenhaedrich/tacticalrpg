@@ -24,7 +24,7 @@ public class EnemyAI
         };
 
         public static bool IsValidMove(Vector2I pos, TileMapLayer map, HashSet<Vector2I> occupied = null) =>
-            map.GetCellAtlasCoords(pos) == Tiles.Ground && 
+            (map.GetCellAtlasCoords(pos) == Tiles.Ground || map.GetCellAtlasCoords(pos) == Tiles.Dead) && 
             (occupied?.Contains(pos) != true);
 
         public static bool IsAtDistance(Vector2I pos, Vector2I target, int distance) =>
