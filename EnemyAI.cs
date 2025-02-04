@@ -103,10 +103,10 @@ public class EnemyAI
         return enemy.pathfinding switch
         {
             PathfindingStrategy.FlankPath or PathfindingStrategy.CirclePath => 
-                new EnemyAction(GetFlankMove(enemyPos, targetPos, map, occupiedPositions, enemy)),
+                new EnemyAction(GetFlankMove(enemyPos, targetPos, map, occupiedPositions, enemy, history)),
             PathfindingStrategy.CautiousPath => 
-                new EnemyAction(GetCautiousMove(enemyPos, targetPos, map, occupiedPositions)),
-            _ => GetSmartMove(enemyPos, targetPos, map, occupiedPositions)
+                new EnemyAction(GetCautiousMove(enemyPos, targetPos, map, occupiedPositions, history)),
+            _ => GetSmartMove(enemyPos, targetPos, map, occupiedPositions, history)
         };
     }
 
@@ -116,7 +116,7 @@ public class EnemyAI
         return distance >= DISTANCE_FLANK;
     }
 
-    private static Vector2I GetFlankMove(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupied, Character enemy)
+    private static Vector2I GetFlankMove(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupied, Character enemy, Queue<Vector2I> history)
     {
         var currentDistance = MovementUtils.GetManhattanDistance(start, target);
 
@@ -126,7 +126,7 @@ public class EnemyAI
             // Always try to move closer when beyond ideal distance
             if (currentDistance > DISTANCE_FLANK)
             {
-                var moveAction = GetSmartMove(start, target, map, occupied);
+                var moveAction = GetSmartMove(start, target, map, occupied, history);
                 if (!moveAction.endTurn)
                 {
                     inDiveAttack[enemy] = true;
@@ -163,7 +163,7 @@ public class EnemyAI
                 var flankPos = target + (side * distance);
                 if (MovementUtils.IsValidMove(flankPos, map, occupied))
                 {
-                    var moveToFlank = GetSmartMove(start, flankPos, map, occupied);
+                    var moveToFlank = GetSmartMove(start, flankPos, map, occupied, history);
                     if (!moveToFlank.endTurn)
                         return moveToFlank.moveDirection;
                 }
@@ -171,10 +171,10 @@ public class EnemyAI
         }
 
         // If flanking fails, try direct approach
-        return GetSmartMove(start, target, map, occupied).moveDirection;
+        return GetSmartMove(start, target, map, occupied, history).moveDirection;
     }
 
-    private static Vector2I GetCautiousMove(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupied)
+    private static Vector2I GetCautiousMove(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupied, Queue<Vector2I> history)
     {
         var currentDistance = MovementUtils.GetManhattanDistance(start, target);
         
@@ -204,7 +204,7 @@ public class EnemyAI
 
         // Too far, move closer
         if (currentDistance > DISTANCE_CAUTIOUS)
-            return GetSmartMove(start, target, map, occupied).moveDirection;
+            return GetSmartMove(start, target, map, occupied, history).moveDirection;
 
         return Vector2I.Zero;
     }
@@ -217,7 +217,7 @@ public class EnemyAI
         return history.Contains(newPos);
     }
 
-    private static EnemyAction GetSmartMove(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupied)
+    private static EnemyAction GetSmartMove(Vector2I start, Vector2I target, TileMapLayer map, HashSet<Vector2I> occupied, Queue<Vector2I> history)
     {
         var astar = new AStarGrid2D();
         astar.Region = map.GetUsedRect();
@@ -258,17 +258,13 @@ public class EnemyAI
 
         var nextPos = new Vector2I((int)path[1].X, (int)path[1].Y);
         
-        // Get the history for the current enemy
-        var history = positionHistory.Values.LastOrDefault() ?? new Queue<Vector2I>();
-        
         if (MovementUtils.IsValidMove(nextPos, map, occupied) && !WouldCauseOscillation(nextPos, history))
         {
             return new EnemyAction(MovementUtils.DirectionTo(start, nextPos));
         }
 
         // If direct path would cause oscillation or is blocked, try alternative directions
-        foreach (var dir in MovementUtils.Cardinals
-            .OrderBy(d => (start + d).DistanceTo(target)))
+        foreach (var dir in MovementUtils.Cardinals.OrderBy(d => (start + d).DistanceTo(target)))
         {
             var altPos = start + dir;
             if (MovementUtils.IsValidMove(altPos, map, occupied) && !WouldCauseOscillation(altPos, history))
