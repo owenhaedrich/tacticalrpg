@@ -16,5 +16,5 @@ script = ExtResource("1_dd75i")
 [node name="Enemies" type="Node2D" parent="Levels/Characters"]
 
 [node name="Camera2D" type="Camera2D" parent="."]
-position = Vector2(569, 329)
+position = Vector2(713, 402)
 zoom = Vector2(0.805, 0.805)
