@@ -9,10 +9,10 @@ public class Character
     public int endurance;
     public int maxEndurance;
     public string name;
-    public Ability currentAbility { get; private set; }
-    public List<Ability> abilities { get; private set; } = new List<Ability>();
-    public bool isDead { get; private set; } = false;
-    public EnemyAI.PathfindingStrategy pathfinding { get; private set; }
+    public Ability currentAbility;
+    public List<Ability> abilities = new List<Ability>();
+    public bool isDead = false;
+    public EnemyAI.PathfindingStrategy pathfinding;
 
     public Character(string name, Vector2I location, float maxHealth, int maxEndurance, 
                     List<Ability> abilities, EnemyAI.PathfindingStrategy pathfinding = EnemyAI.PathfindingStrategy.SmartPath)
@@ -74,7 +74,8 @@ public class Character
     {
         List<Ability> abilities = new List<Ability>
         {
-            new Ability("Sand Crush", 4f, 1, 2),
+            new Ability("Stone Wall", 6f, 1, 1),
+            new Ability("Earth Tremor", 3f, 2, 3),
         };
         return new Character("Earth Spirit", location, 15f, 5, abilities, EnemyAI.PathfindingStrategy.FlankPath);
     }
@@ -83,6 +84,8 @@ public class Character
     {
         List<Ability> abilities = new List<Ability>
         {
+            new Ability("Dagger Slash", 4f, 1, 1),
+            new Ability("Dirty Trick", 2f, 2, 2),
             new Ability("Rock Throw", 1f, 3, 1),
         };
         return new Character("Goblin", location, 8f, 6, abilities, EnemyAI.PathfindingStrategy.CautiousPath);
@@ -93,6 +96,7 @@ public class Character
         List<Ability> abilities = new List<Ability>
         {
             new Ability("Mandible Crush", 9f, 1, 1),
+            new Ability("Acid Spray", 4f, 2, 2),
         };
         return new Character("Giant Bug", location, 20f, 5, abilities, EnemyAI.PathfindingStrategy.FlankPath);
     }

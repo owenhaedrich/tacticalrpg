@@ -77,16 +77,22 @@ public class EnemyAI
         if (enemy.endurance <= 0)
             return EnemyAction.EndTurn;
 
-        // Check for valid targets in range
-        var targetsInRange = livingTargets
-            .Where(t => validTargets.ContainsKey(t.location))
-            .ToArray();
-
-        // If we have enough endurance and there are targets in range, attack the closest one
-        if (targetsInRange.Any() && enemy.endurance >= enemy.currentAbility.cost)
+        // Check each ability for valid targets
+        foreach (var ability in enemy.abilities)
         {
-            var closestTarget = targetsInRange.MinBy(t => enemyPos.DistanceTo(t.location));
-            return new EnemyAction(Vector2I.Zero, true, closestTarget.location);
+            if (enemy.endurance >= ability.cost)
+            {
+                var targetsInRange = livingTargets
+                    .Where(t => MovementUtils.GetManhattanDistance(enemyPos, t.location) <= ability.range)
+                    .ToArray();
+
+                if (targetsInRange.Any())
+                {
+                    var closestTarget = targetsInRange.MinBy(t => enemyPos.DistanceTo(t.location));
+                    enemy.currentAbility = ability;
+                    return new EnemyAction(Vector2I.Zero, true, closestTarget.location);
+                }
+            }
         }
 
         // Rest of movement logic remains the same
