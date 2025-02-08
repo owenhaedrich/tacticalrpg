@@ -22,14 +22,16 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
     private Dictionary<Vector2I, int> validTargets = new();
 
     // Characters
-    private Character[] party;
-    private Character[] enemies;
+    public Character[] party;
+    public Character[] enemies;
 
     // Computed property for all characters
     private Character[] allCharacters => party.Concat(enemies).ToArray();
 
     private float enemyActionTimer = 0f;
     private const float ENEMY_ACTION_DELAY = 0.1f; // Delay between enemy actions
+
+    private CharacterSpriteManager spriteManager;
     #endregion
  
     #region Core Game Loop
@@ -38,10 +40,12 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
         LoadMap();
     }
 
-    public void Initialize()
+    public void Initialize(CharacterSpriteManager spriteManagerReference)
     {
+        spriteManager = spriteManagerReference;
         UpdateMap();
         FindTargets(party[activePartyMember].location);
+        NotifyCharacterUpdates();
     }
 
     public override void _Input(InputEvent @event)
@@ -223,6 +227,7 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
             int moveCost = validMoves[selectedCell];
             party[activePartyMember].location = selectedCell;
             party[activePartyMember].endurance -= moveCost;
+            NotifyCharacterUpdates();
             return true;
         }
         return false;
@@ -278,6 +283,7 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
         UpdateMap();
         while (activeEnemy < enemies.Length)
         {
+            
             Character enemy = enemies[activeEnemy];
             if (!enemy.isDead && enemy.endurance > 0)
             {
@@ -299,6 +305,7 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
                 else if (action.useAbility)
                 {
                     UseAbility(enemy, action.targetPosition);
+                    NotifyCharacterUpdates();
                 }
                 else
                 {
@@ -309,6 +316,7 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
                         enemy.location = action.movePosition;
                         enemy.endurance -= movementCost;
                         UpdateMap();
+                        NotifyCharacterUpdates();
                     }
                 }
                 
@@ -378,5 +386,16 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
 
         UpdateMap();
         FindTargets(party[activePartyMember].location);
+        NotifyCharacterUpdates();
+    }
+
+    private void NotifyCharacterUpdates()
+    {
+        if (spriteManager == null) return;
+        foreach (var character in allCharacters)
+        {
+            spriteManager.UpdateSpritePosition(character);
+            spriteManager.SetSpriteState(character, character.isDead);
+        }
     }
 }

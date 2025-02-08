@@ -1,19 +1,19 @@
-[gd_scene load_steps=2 format=3 uid="uid://chhxptcxkfnyv"]
+[gd_scene load_steps=3 format=3 uid="uid://chhxptcxkfnyv"]
 
 [ext_resource type="Script" path="res://GameManager.cs" id="1_dd75i"]
+[ext_resource type="Script" path="res://CharacterSpriteManager.cs" id="2_ac6hw"]
 
 [node name="World" type="Node2D"]
 script = ExtResource("1_dd75i")
 
 [node name="Levels" type="Node2D" parent="."]
 
-[node name="Characters" type="Node2D" parent="Levels"]
+[node name="Characters" type="Node2D" parent="."]
+script = ExtResource("2_ac6hw")
 
-[node name="Heroes" type="Node2D" parent="Levels/Characters"]
+[node name="Heroes" type="Node2D" parent="Characters"]
 
-[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="Levels/Characters/Heroes"]
-
-[node name="Enemies" type="Node2D" parent="Levels/Characters"]
+[node name="Enemies" type="Node2D" parent="Characters"]
 
 [node name="Camera2D" type="Camera2D" parent="."]
 position = Vector2(713, 402)

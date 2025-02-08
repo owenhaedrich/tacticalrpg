@@ -275,6 +275,7 @@ public class EnemyAI
 
                 if (newDistance < currentDistance && !WouldCauseOscillation(landing, history))
                 {
+                    GD.Print($"Jumping from {start} to {landing}");
                     jumpPosition = landing;
                     return true;
                 }

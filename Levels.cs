@@ -36,10 +36,10 @@ public static class Levels
                     Character.Domli(new Vector2I(3, 7))
                 },
                 Enemies = new[] {
-                    Character.EarthSpirit(new Vector2I(20, 5)),
-                    Character.EarthSpirit(new Vector2I(18, 9)),
-                    Character.GiantBug(new Vector2I(19, 13)),
-                    Character.GiantBug(new Vector2I(15, 7))
+                    Character.Dog(new Vector2I(20, 5)),
+                    Character.Dog(new Vector2I(20, 6)),
+                    /*Character.GiantBug(new Vector2I(19, 13)),
+                    Character.GiantBug(new Vector2I(15, 7))*/
                 }
             }
         }

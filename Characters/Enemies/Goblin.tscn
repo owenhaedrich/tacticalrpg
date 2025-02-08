@@ -1,0 +1,23 @@
+[gd_scene load_steps=4 format=3 uid="uid://dd60o6bkv3ogn"]
+
+[ext_resource type="Texture2D" uid="uid://du6fu2mateegs" path="res://tileset.png" id="1_tctdg"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_0h4l8"]
+atlas = ExtResource("1_tctdg")
+region = Rect2(50, 100, 50, 50)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_h16kf"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_0h4l8")
+}],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}]
+
+[node name="Dog" type="Node2D"]
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
+sprite_frames = SubResource("SpriteFrames_h16kf")
