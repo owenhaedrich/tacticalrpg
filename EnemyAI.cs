@@ -120,53 +120,85 @@ public class EnemyAI
 
     private static Vector2I GetFlankMove(Vector2I start, Vector2I target, TileMapLayer map, Character enemy, Queue<Vector2I> history)
     {
-        var currentDistance = MovementUtils.GetManhattanDistance(start, target);
+        if (!inDiveAttack.ContainsKey(enemy))
+            inDiveAttack[enemy] = false;
 
-        // If we're at a good flanking position, consider attacking
+        var currentDistance = MovementUtils.GetManhattanDistance(start, target);
+        var visitedSet = visitedPositions[enemy];
+
+        // If we're at a good flanking position, handle attack sequence
         if (IsGoodFlankPosition(start, target))
         {
-            // Always try to move closer when beyond ideal distance
             if (currentDistance > DISTANCE_FLANK)
             {
-                return GetSmartMove(start, target, map, history);
+                var moveTowards = GetSmartMove(start, target, map, history);
+                // Validate movement cost
+                if (!visitedSet.Contains(moveTowards) && 
+                    MovementUtils.HasEnoughEndurance(MovementUtils.GetManhattanDistance(start, moveTowards)))
+                {
+                    visitedSet.Add(moveTowards);
+                    return moveTowards;
+                }
             }
-            // At ideal distance, start dive attack sequence
             else if (!inDiveAttack[enemy])
             {
                 inDiveAttack[enemy] = true;
-                return MovementUtils.DirectionTo(start, target);
+                var diveMove = start + MovementUtils.DirectionTo(start, target);
+                // Validate movement cost
+                if (MovementUtils.IsValidMove(diveMove, map) && 
+                    !visitedSet.Contains(diveMove) && 
+                    MovementUtils.HasEnoughEndurance(MovementUtils.GetManhattanDistance(start, diveMove)))
+                {
+                    visitedSet.Add(diveMove);
+                    return diveMove;
+                }
             }
-            else
-            {
-                inDiveAttack[enemy] = false;  // Reset after dive
-                return Vector2I.Zero;  // Signal retreat
-            }
+            inDiveAttack[enemy] = false;
+            return Vector2I.Zero;
         }
 
-        // Reset dive attack state if we're not in position
         inDiveAttack[enemy] = false;
 
+        // Calculate potential flanking directions
         var baseDirection = MovementUtils.DirectionTo(start, target);
         var sideDirections = new[] {
-            new Vector2I(-baseDirection.Y, baseDirection.X),  // right side
-            new Vector2I(baseDirection.Y, -baseDirection.X)   // left side
+            new Vector2I(-baseDirection.Y, baseDirection.X),
+            new Vector2I(baseDirection.Y, -baseDirection.X)
         };
 
-        // Try flanking positions at different distances
-        for (int distance = 2; distance >= 1; distance--)
+        // Try multiple flanking positions with randomization
+        var random = new Random();
+        for (int distance = 3; distance >= 1; distance--)
         {
-            foreach (var side in sideDirections)
+            foreach (var side in sideDirections.OrderBy(x => random.Next()))
             {
                 var flankPos = target + (side * distance);
                 if (MovementUtils.IsValidMove(flankPos, map))
                 {
-                    return GetSmartMove(start, flankPos, map, history);
+                    var moveToFlank = GetSmartMove(start, flankPos, map, history);
+                    // Validate movement cost
+                    if (moveToFlank != Vector2I.Zero && 
+                        !visitedSet.Contains(moveToFlank) && 
+                        MovementUtils.HasEnoughEndurance(MovementUtils.GetManhattanDistance(start, moveToFlank)))
+                    {
+                        visitedSet.Add(moveToFlank);
+                        return moveToFlank;
+                    }
                 }
             }
         }
 
-        // If flanking fails, try direct approach
-        return GetSmartMove(start, target, map, history);
+        // Fallback to direct approach
+        var directMove = GetSmartMove(start, target, map, history);
+        // Validate movement cost
+        if (!visitedSet.Contains(directMove) && 
+            MovementUtils.HasEnoughEndurance(MovementUtils.GetManhattanDistance(start, directMove)))
+        {
+            visitedSet.Add(directMove);
+            return directMove;
+        }
+
+        return Vector2I.Zero;
     }
 
     private static Vector2I GetCautiousMove(Vector2I start, Vector2I target, TileMapLayer map, Queue<Vector2I> history)
@@ -309,7 +341,17 @@ public class EnemyAI
         astar.SetPointSolid(start, false);
         astar.SetPointSolid(target, false);
 
-        return astar.GetPointPath(start, target);
+        var path = astar.GetPointPath(start, target);
+        
+        // Validate that the first step is only one square away
+        if (path != null && path.Length >= 2)
+        {
+            var firstStep = new Vector2I((int)path[1].X, (int)path[1].Y);
+            if (MovementUtils.GetManhattanDistance(start, firstStep) > 1)
+                return null;
+        }
+        
+        return path;
     }
 
 }
