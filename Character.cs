@@ -85,7 +85,6 @@ public class Character
         List<Ability> abilities = new List<Ability>
         {
             new Ability("Dagger Slash", 4f, 1, 1),
-            new Ability("Dirty Trick", 2f, 2, 2),
             new Ability("Rock Throw", 1f, 3, 1),
         };
         return new Character("Goblin", location, 8f, 6, abilities, EnemyAI.PathfindingStrategy.CautiousPath);

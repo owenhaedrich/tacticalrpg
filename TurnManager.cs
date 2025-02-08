@@ -158,7 +158,7 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
         {
             validMoves = validCells;
             foreach (var pos in validCells.Keys)
-                SetCell(pos, 1, Tiles.Movement);
+                SetCell(pos, 1, Tiles.MovementTarget);
             // Redraw party members with death state
             foreach (Character member in party)
                 SetCell(member.location, 1, member.isDead ? Tiles.Dead : Tiles.Player);
@@ -263,18 +263,6 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
     #endregion
 
     #region Turn Management
-    private Vector2I ResolveDiagonalMove(Vector2I moveDirection)
-    {
-        // If the move is diagonal (both x and y are non-zero)
-        if (moveDirection.X != 0 && moveDirection.Y != 0)
-        {
-            // Randomly choose to move either horizontally or vertically
-            return GD.RandRange(0, 1) == 0
-                ? new Vector2I(moveDirection.X, 0)
-                : new Vector2I(0, moveDirection.Y);
-        }
-        return moveDirection;
-    }
 
     private Dictionary<Vector2I, int> GetValidTargetsForCharacter(Character character)
     {
@@ -293,6 +281,7 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
             Character enemy = enemies[activeEnemy];
             if (!enemy.isDead && enemy.endurance > 0)
             {
+                MovementUtils.SetCurrentCharacter(enemy);  // Set current character for movement checks
                 Dictionary<Vector2I, int> validTargets = GetValidTargetsForCharacter(enemy);
                 EnemyAI.EnemyAction action = EnemyAI.GetAction(
                     enemy.location, 
@@ -302,19 +291,27 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
                     enemy
                 );
                 
-                if (action.useAbility)
+                if (action.endTurn)
+                {
+                    activeEnemy++;
+                    return;
+                }
+                else if (action.useAbility)
                 {
                     UseAbility(enemy, action.targetPosition);
                 }
                 else
                 {
-                    Vector2I resolvedMove = ResolveDiagonalMove(action.moveDirection);
-                    enemy.location += resolvedMove;
-                    enemy.endurance--;
-                    UpdateMap();
+                    int movementCost = MovementUtils.GetManhattanDistance(enemy.location, action.movePosition);
+                    
+                    if (enemy.endurance >= movementCost)
+                    {
+                        enemy.location = action.movePosition;
+                        enemy.endurance -= movementCost;
+                        UpdateMap();
+                    }
                 }
                 
-                // Only increment activeEnemy if this enemy is out of endurance
                 if (enemy.endurance <= 0)
                 {
                     activeEnemy++;
@@ -358,8 +355,27 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
 
     public void SetCharacters(Character[] partyMembers, Character[] enemyUnits)
     {
+        // Clear any existing characters first
+        if (party != null)
+        {
+            foreach (var member in party)
+                MovementUtils.UnregisterCharacter(member);
+        }
+        if (enemies != null)
+        {
+            foreach (var enemy in enemies)
+                MovementUtils.UnregisterCharacter(enemy);
+        }
+
         party = partyMembers;
         enemies = enemyUnits;
+
+        // Register all new characters
+        foreach (var member in party)
+            MovementUtils.RegisterCharacter(member);
+        foreach (var enemy in enemies)
+            MovementUtils.RegisterCharacter(enemy);
+
         UpdateMap();
         FindTargets(party[activePartyMember].location);
     }
