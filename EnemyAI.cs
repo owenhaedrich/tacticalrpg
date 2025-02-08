@@ -253,6 +253,27 @@ public class EnemyAI
 
     private static Vector2I GetSmartMove(Vector2I start, Vector2I target, TileMapLayer map, Queue<Vector2I> history)
     {
+        // First attempt: Ignore occupied spaces
+        var path = CalculatePath(start, target, map, includeOccupied: false);
+        
+        // If no valid path or next step is blocked, try including occupied spaces
+        if (path == null || path.Length < 2 || 
+            !MovementUtils.IsValidMove(new Vector2I((int)path[1].X, (int)path[1].Y), map))
+        {
+            path = CalculatePath(start, target, map, includeOccupied: true);
+        }
+
+        if (path == null || path.Length < 2)
+        {
+            GD.Print($"No path found from {start} to {target}");
+            return Vector2I.Zero;
+        }
+
+        return new Vector2I((int)path[1].X, (int)path[1].Y);
+    }
+
+    private static Vector2[] CalculatePath(Vector2I start, Vector2I target, TileMapLayer map, bool includeOccupied)
+    {
         var astar = new AStarGrid2D();
         astar.Region = map.GetUsedRect();
         astar.CellSize = Vector2.One;
@@ -265,28 +286,30 @@ public class EnemyAI
             astar.SetPointSolid(cell, false);
         }
 
-        // Then mark walls
+        // Mark walls
         foreach (var cell in map.GetUsedCells())
         {
             bool isWall = map.GetCellAtlasCoords(cell) == Tiles.Wall;
             if (isWall)
                 astar.SetPointSolid(cell, true);
         }
+
+        // If requested, mark occupied spaces as solid
+        if (includeOccupied)
+        {
+            var occupied = MovementUtils.UpdateOccupiedPositions();
+            foreach (var pos in occupied)
+            {
+                if (pos != start && pos != target)
+                    astar.SetPointSolid(pos, true);
+            }
+        }
         
         // Ensure start and target are not marked as solid
         astar.SetPointSolid(start, false);
         astar.SetPointSolid(target, false);
 
-        var path = astar.GetPointPath(start, target);
-        
-        // Debug path finding
-        if (path == null || path.Length < 2)
-        {
-            GD.Print($"No path found from {start} to {target}");
-            return Vector2I.Zero;
-        }
-
-        return new Vector2I((int)path[1].X, (int)path[1].Y);
+        return astar.GetPointPath(start, target);
     }
 
 }
