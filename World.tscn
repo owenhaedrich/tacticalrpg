@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://chhxptcxkfnyv"]
 
-[ext_resource type="Script" path="res://GameManager.cs" id="1_dd75i"]
-[ext_resource type="Script" path="res://CharacterSpriteManager.cs" id="2_ac6hw"]
+[ext_resource type="Script" path="res://Scripts/GameManager.cs" id="1_dd75i"]
+[ext_resource type="Script" path="res://Scripts/CharacterSpriteManager.cs" id="2_ac6hw"]
 
 [node name="World" type="Node2D"]
 script = ExtResource("1_dd75i")

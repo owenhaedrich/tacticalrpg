@@ -28,7 +28,7 @@ public partial class CharacterSpriteManager : Node2D
         {
             var spriteContainer = new Node2D();
             AddChild(spriteContainer);
-            var sprite = GD.Load<PackedScene>($"res://Characters/Heroes/{character.name}.tscn").Instantiate();
+            var sprite = GD.Load<PackedScene>($"res://Sprites/Heroes/{character.name}.tscn").Instantiate();
             spriteContainer.AddChild(sprite);
             characterSprites[character] = spriteContainer;
             UpdateSpritePosition(character);
@@ -38,7 +38,7 @@ public partial class CharacterSpriteManager : Node2D
         {
             var spriteContainer = new Node2D();
             AddChild(spriteContainer);
-            var sprite = GD.Load<PackedScene>($"res://Characters/Enemies/{character.name}.tscn").Instantiate();
+            var sprite = GD.Load<PackedScene>($"res://Sprites/Enemies/{character.name}.tscn").Instantiate();
             spriteContainer.AddChild(sprite);
             characterSprites[character] = spriteContainer;
             UpdateSpritePosition(character);

@@ -29,7 +29,7 @@ public partial class TurnManager : TileMapLayer // TileMapLayer is a custom clas
     private Character[] allCharacters => party.Concat(enemies).ToArray();
 
     private float enemyActionTimer = 0f;
-    private const float ENEMY_ACTION_DELAY = 0.1f; // Delay between enemy actions
+    private const float ENEMY_ACTION_DELAY = 0.3f; // Delay between enemy actions
 
     private CharacterSpriteManager spriteManager;
     #endregion
